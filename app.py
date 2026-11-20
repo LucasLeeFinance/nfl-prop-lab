@@ -7,7 +7,7 @@ import plotly.express as px
 import streamlit as st
 
 st.set_page_config(page_title='NFL Prop Lab | Underdog Research', page_icon='🏈', layout='wide')
-st.markdown('''<style>.block-container{padding-top:2rem;max-width:1350px}h1,h2,h3{letter-spacing:-.025em}div[data-testid="stMetric"]{border:1px solid #374151;border-radius:12px;padding:15px}</style>''', unsafe_allow_html=True)
+st.markdown('''<style>.block-container{padding-top:1.3rem;max-width:1450px}h1,h2,h3{letter-spacing:-.025em}div[data-testid="stMetric"]{border:1px solid #374151;border-radius:12px;padding:15px}div[data-testid="stTabs"] button{font-weight:600}div[data-testid="stImage"] img{border-radius:16px;background:#18212d} </style>''', unsafe_allow_html=True)
 st.title('🏈 NFL Prop Lab')
 st.caption('Underdog Higher / Lower research • historical performance • momentum • matchup context')
 
@@ -132,8 +132,11 @@ def fetch_current_rosters(season):
     roster["roster_player"] = roster[name_col].astype(str)
     roster["roster_position"] = roster[pos_col].astype(str).str.upper()
     roster["roster_team"] = roster[team_col].astype(str) if team_col else ""
+    # nflverse roster feeds may expose a player portrait under different column names.
+    photo_col = next((c for c in ("headshot_url", "headshot", "headshot_href", "player_headshot", "espn_headshot") if c in roster.columns), None)
+    roster["roster_headshot"] = roster[photo_col].astype("string") if photo_col else pd.Series(pd.NA, index=roster.index, dtype="string")
     # A roster entry is not proof of being healthy or scheduled to play.
-    return roster[["_player_key", "roster_player", "roster_position", "roster_team"]].drop_duplicates("_player_key")
+    return roster[["_player_key", "roster_player", "roster_position", "roster_team", "roster_headshot"]].drop_duplicates("_player_key")
 
 REQUIRED_LOG = ['player','game_date','opponent']
 REQUIRED_LINES = ['player','market','line']
@@ -529,7 +532,8 @@ with tabs[2]:
             st.dataframe(slate_lines[cols], hide_index=True, use_container_width=True)
 
 with tabs[3]:
-    st.header('Player Profile · Performance, Usage & Matchup')
+    st.header('Player Research')
+    st.caption('Player-first research: performance, usage, Underdog lines, and opponent defense in one view.')
     if logs is None:
         st.info('Load automatic NFL statistics or upload a player game-log CSV to start.')
     else:
@@ -546,18 +550,41 @@ with tabs[3]:
             st.warning('No players match the current roster and game filters. Enable historical players or select All games.')
             st.stop()
         player = st.selectbox('Player', players, key='research_player')
+        # Profile identity: portraits come only from roster source data, not guessed URLs.
+        profile_rows = player_pool.loc[player_pool['player'].astype(str).eq(player)]
+        latest_profile = profile_rows.sort_values('game_date').iloc[-1] if not profile_rows.empty else None
+        position = str(latest_profile.get('roster_position', '') or '') if latest_profile is not None else ''
+        team_name = str(latest_profile.get('roster_team', '') or '') if latest_profile is not None else ''
+        if not team_name or team_name.lower() in ('nan', 'none'):
+            team_name = str(latest_profile.get('team', 'Unknown')) if latest_profile is not None else 'Unknown'
+        portrait = latest_profile.get('roster_headshot') if latest_profile is not None else None
+        left, right = st.columns([1, 6], vertical_alignment='center')
+        with left:
+            if isinstance(portrait, str) and portrait.startswith('https://'):
+                try:
+                    st.image(portrait, width=116)
+                except Exception:
+                    st.caption('No portrait available')
+            else:
+                st.caption('No portrait available')
+        with right:
+            st.markdown(f'## {player}')
+            st.caption(' · '.join(x for x in (position if position not in ('nan','None') else '', team_name) if x))
+            st.caption('NFL roster headshot when available · No guessed player photos')
+        st.divider()
         available = [m for m in MARKETS if m in logs and logs.loc[logs.player.astype(str).eq(player), m].notna().any()]
         if not available:
             st.warning('No supported market columns found for this player.')
         else:
-            market = st.selectbox('Stat market', available, format_func=lambda x: MARKETS[x])
+            market_col, window_col = st.columns([2, 1])
+            market = market_col.selectbox('Stat market', available, format_func=lambda x: MARKETS[x])
             full = logs[logs.player.astype(str).eq(player)].dropna(subset=[market]).copy()
             full = full.sort_values(['season','week','game_date'] if {'season','week'}.issubset(full.columns) else ['game_date'])
             if 'season' in full and full['season'].notna().any():
                 seasons = sorted(full['season'].dropna().astype(int).unique(), reverse=True)
                 chosen_seasons = st.multiselect('Seasons to display', seasons, default=seasons, key='research_seasons')
                 full = full[full['season'].isin(chosen_seasons)]
-            window = st.selectbox('Games to display', ['All games','Last 3','Last 5','Last 10','Last 17'], index=0)
+            window = window_col.selectbox('Games to display', ['All games','Last 3','Last 5','Last 10','Last 17'], index=2)
             opponent_choices = ['All opponents'] + sorted(full['opponent'].dropna().astype(str).unique().tolist())
             opponent_choice = st.selectbox('Historical opponent filter', opponent_choices)
             if opponent_choice != 'All opponents':
@@ -575,6 +602,7 @@ with tabs[3]:
                 d.metric('Std. deviation', f'{vals.std():.1f}' if len(vals)>1 else 'N/A')
                 # Usage is a leading indicator of opportunity, not a guaranteed result.
                 st.subheader('Opportunity and usage trends')
+                st.caption('Changes in volume can explain changes in player production.')
                 opportunity_metrics = {
                     'targets': 'Targets', 'receptions': 'Receptions',
                     'carries': 'Rushing attempts', 'pass_attempts': 'Pass attempts',
@@ -604,7 +632,7 @@ with tabs[3]:
                     st.caption('No supported opportunity statistics are available for this player in the selected history.')
                 # Contextual defense scouting is part of the player profile, not a separate page.
                 st.divider()
-                st.subheader('Upcoming opponent · Defensive matchup')
+                st.subheader('Opponent defense · Position-specific production allowed')
                 player_team = None
                 if 'team' in logs.columns:
                     team_values = logs.loc[logs['player'].astype(str).eq(player), 'team'].dropna().astype(str)
@@ -625,7 +653,7 @@ with tabs[3]:
                     if not upcoming.empty:
                         next_game = upcoming.sort_values('gameday').iloc[0]
                         upcoming_opponent = str(next_game['away_team'] if str(next_game['home_team']) == player_team else next_game['home_team'])
-                st.caption('Select a matchup in the sidebar to compare this player with that opponent. Otherwise the next scheduled opponent is used when available.')
+                st.caption('Automatically uses the selected matchup or next scheduled opponent when available. You can change the defense below.')
                 if upcoming_opponent:
                     st.write(f'**{player_team or "Team unknown"} vs {upcoming_opponent}**')
                 else:
@@ -696,7 +724,7 @@ with tabs[3]:
                 else:
                     st.caption('Defensive matchup research requires NFL opponent, season, week and roster-position data.')
                 st.divider()
-                st.subheader('Underdog line comparison')
+                st.subheader('Underdog line comparison & game results')
                 matching_lines = lines[(lines["_player_key"].eq(normalized_player(player))) & (lines["market"].eq(market))] if lines is not None and "_player_key" in lines else pd.DataFrame()
                 if not matching_lines.empty:
                     chosen_line = st.selectbox("Observed Underdog line", sorted(matching_lines["line"].dropna().astype(float).unique().tolist()), key=f"observed_{normalized_player(player)}_{market}")
@@ -717,7 +745,7 @@ with tabs[3]:
                     st.caption('Line comparison hidden until an observed line is available or you enable a hypothetical comparison.')
                 plot = view.copy()
                 plot['Game'] = (plot['season'].astype('Int64').astype(str) + ' W' + plot['week'].astype('Int64').astype(str)) if {'season','week'}.issubset(plot.columns) else plot['game_date'].dt.strftime('%Y-%m-%d')
-                fig = px.line(plot, x='Game', y=market, markers=True, hover_data=['opponent'], title=f'{player} — {MARKETS[market]}')
+                fig = px.bar(plot, x='Game', y=market, hover_data=['opponent'], title=f'{player} — {MARKETS[market]} by game')
                 if line is not None:
                     fig.add_hline(y=line, line_dash='dash', annotation_text='Observed line' if not matching_lines.empty else 'Hypothetical line')
                 st.plotly_chart(fig, use_container_width=True)

@@ -424,7 +424,7 @@ def analyze(log_bytes, line_bytes, weight, adjustment):
         if 'higher_available' in pick and str(pick['higher_available']).lower() == 'false': higher = float('nan')
         if 'lower_available' in pick and str(pick['lower_available']).lower() == 'false': lower = float('nan')
         if not np.isfinite(higher) and not np.isfinite(lower): continue
-        rows.append({'player':player,'market':market,'market_name':MARKETS.get(market,market.replace('_',' ').title()),'line':line,'projection':round(projected,2),'season_mean':round(base,2),'recent_mean':round(last,2),'momentum_delta':round(last-base,2),'sample_games':len(sample),'volatility':round(sd,2),'higher_prob':higher,'lower_prob':lower,'direction':'Higher' if (np.isfinite(higher) and (not np.isfinite(lower) or higher>=lower)) else 'Lower','estimated_prob':max(x for x in (higher,lower) if np.isfinite(x)),'updated_at':pick.get('updated_at','Not provided')})
+        rows.append({'player':player,'market':market,'market_name':MARKETS.get(market,market.replace('_',' ').title()),'line':line,'projection':round(projected,2),'season_mean':round(base,2),'recent_mean':round(last,2),'momentum_delta':round(last-base,2),'sample_games':len(sample),'volatility':round(sd,2),'higher_prob':higher,'lower_prob':lower,'direction':'Higher' if (np.isfinite(higher) and (not np.isfinite(lower) or higher>=lower)) else 'Lower','estimated_prob':max(x for x in (higher,lower) if np.isfinite(x)),'updated_at':pick.get('updated_at','Not provided'),'starts_at':pick.get('starts_at','')})
     return pd.DataFrame(rows)
 
 results=pd.DataFrame()
@@ -497,8 +497,12 @@ with tabs[1]:
         if standard_only and slate_lines is not None and 'pick_type' in slate_lines:
             standard=slate_lines[slate_lines['pick_type'].astype(str).str.lower().isin(['standard','balanced'])][['player','market','line']].drop_duplicates()
             view=view.merge(standard,on=['player','market','line'],how='inner')
+        # Only rank observations with a plausible future start when the provider supplies one.
+        if 'starts_at' in view.columns:
+            upcoming = pd.to_datetime(view['starts_at'], errors='coerce', utc=True)
+            view = view.loc[upcoming.isna() | upcoming.ge(pd.Timestamp.now(tz='UTC'))]
         view=view.sort_values('estimated_prob',ascending=False)
-        if view.empty: st.warning('No props meet these filters. Try adjusting the filters or adding data.')
+        if view.empty: st.warning('No props meet these filters. The partial API board may not contain supported standard offensive props; inspect the diagnostics above before changing thresholds.')
         else:
             show=view[['player','market_name','line','direction','estimated_prob','projection','momentum_delta','sample_games','updated_at']].copy()
             show['estimated_prob']=show['estimated_prob'].map(lambda x:f'{x:.1%}')
@@ -569,6 +573,35 @@ with tabs[3]:
                 b.metric('Last 5 average', f'{vals.tail(5).mean():.1f}')
                 c.metric('Games displayed', len(vals))
                 d.metric('Std. deviation', f'{vals.std():.1f}' if len(vals)>1 else 'N/A')
+                # Usage is a leading indicator of opportunity, not a guaranteed result.
+                st.subheader('Opportunity and usage trends')
+                opportunity_metrics = {
+                    'targets': 'Targets', 'receptions': 'Receptions',
+                    'carries': 'Rushing attempts', 'pass_attempts': 'Pass attempts',
+                    'completions': 'Pass completions',
+                }
+                usage_rows = []
+                for metric, label in opportunity_metrics.items():
+                    if metric not in full.columns:
+                        continue
+                    history_usage = pd.to_numeric(full[metric], errors='coerce').dropna()
+                    if len(history_usage) < 3:
+                        continue
+                    last_five = history_usage.tail(5)
+                    prior_five = history_usage.iloc[-10:-5]
+                    usage_rows.append({
+                        'Opportunity metric': label,
+                        'Last 5 avg': round(float(last_five.mean()), 2),
+                        'Previous 5 avg': round(float(prior_five.mean()), 2) if len(prior_five) >= 3 else None,
+                        'Selected-history avg': round(float(history_usage.mean()), 2),
+                        'Observations': len(history_usage),
+                    })
+                if usage_rows:
+                    usage_frame = pd.DataFrame(usage_rows)
+                    st.dataframe(usage_frame, hide_index=True, use_container_width=True)
+                    st.caption('Opportunity counts help explain changes in production. These are historical observations, not snap share, route participation, injury updates, or predictive probabilities. Previous 5 requires at least three observations.')
+                else:
+                    st.caption('No supported opportunity statistics are available for this player in the selected history.')
                 st.subheader('Underdog line comparison')
                 matching_lines = lines[(lines["_player_key"].eq(normalized_player(player))) & (lines["market"].eq(market))] if lines is not None and "_player_key" in lines else pd.DataFrame()
                 if not matching_lines.empty:
@@ -613,11 +646,75 @@ with tabs[4]:
         st.dataframe(momentum,hide_index=True,use_container_width=True)
         st.caption('Different market units are not directly comparable. Do not interpret a 10-yard change as equivalent to a 10-reception change.')
 with tabs[5]:
-    st.header('Defensive Matchup Research')
-    st.write('Coverage shells, man/zone rates, blitz rates, pressure, defensive personnel, injuries, and offensive scheme fit belong here. No verified scheme-level dataset is connected yet.')
-    st.warning('The sidebar matchup adjustment is a manual scenario tool, not a measured defensive advantage. It is applied globally to the current projections and should remain at 0% unless you are testing a clearly documented hypothesis.')
-    st.markdown('**Planned defensive data fields:** coverage type and frequency; pressure and blitz rate; defensive front and box counts; slot/outside matchup; personnel availability; opponent-adjusted efficiency; and data-source timestamp.')
-    st.markdown('**Important:** defensive tendencies vary by opponent, down, distance, and personnel. A team-wide coverage percentage should not automatically determine a player projection.')
+    st.header('Defensive Matchups — offensive production allowed')
+    st.caption('Based on observed NFL player game logs, not defensive-player props. These are descriptive opponent results, not verified coverage, blitz, pressure, or scheme measurements.')
+    if logs is None or logs.empty or not {'opponent', 'season', 'week'}.issubset(logs.columns):
+        st.info('Load automatic NFL statistics with season, week, and opponent to analyze defensive matchups.')
+    else:
+        defensive_source = logs.copy()
+        defensive_source['opponent'] = defensive_source['opponent'].astype(str).str.upper().str.strip()
+        defensive_source = defensive_source[~defensive_source['opponent'].isin(['', 'UNKNOWN', 'NAN', 'NONE'])]
+        defensive_source['season'] = pd.to_numeric(defensive_source['season'], errors='coerce')
+        defensive_source['week'] = pd.to_numeric(defensive_source['week'], errors='coerce')
+        if 'roster_position' in defensive_source.columns:
+            defensive_source['_position'] = defensive_source['roster_position'].fillna('').astype(str).str.upper()
+        else:
+            defensive_source['_position'] = ''
+        st.caption('Position-specific analysis requires roster-position matches. Players without a verified position are excluded from position-specific totals.')
+        d1, d2, d3 = st.columns(3)
+        d_seasons = sorted(defensive_source['season'].dropna().astype(int).unique().tolist(), reverse=True)
+        d_season = d1.selectbox('Defensive analysis season', d_seasons, index=0, key='def_season') if d_seasons else None
+        d_teams = sorted(defensive_source.loc[defensive_source['season'].eq(d_season), 'opponent'].unique().tolist()) if d_season is not None else []
+        if selected_teams is not None:
+            game_opponents = [x for x in d_teams if x in selected_teams]
+            default_team = game_opponents[0] if game_opponents else (d_teams[0] if d_teams else None)
+        else:
+            default_team = d_teams[0] if d_teams else None
+        if d_teams:
+            d_team = d2.selectbox('Opposing defense', d_teams, index=d_teams.index(default_team), key='def_team')
+            d_position = d3.selectbox('Offensive position', ['QB', 'RB', 'WR', 'TE'], key='def_position')
+            position_metrics = {'QB': ['passing_yards', 'passing_tds', 'pass_attempts', 'completions', 'interceptions'],
+                                'RB': ['rushing_yards', 'carries', 'rushing_tds', 'receiving_yards', 'receptions', 'targets'],
+                                'WR': ['receiving_yards', 'receptions', 'targets', 'receiving_tds'],
+                                'TE': ['receiving_yards', 'receptions', 'targets', 'receiving_tds']}
+            d_market_options = [m for m in position_metrics[d_position] if m in defensive_source.columns]
+            d_scope = defensive_source.loc[defensive_source['season'].eq(d_season) & defensive_source['_position'].eq(d_position)].copy()
+            if d_scope.empty or not d_market_options:
+                st.warning('No position-verified offensive game logs available for this selection. This can happen when roster data is unavailable or does not match historical names.')
+            else:
+                d_metric = st.selectbox('Stat allowed', d_market_options, format_func=lambda x: MARKETS.get(x, x), key='def_metric')
+                d_scope[d_metric] = pd.to_numeric(d_scope[d_metric], errors='coerce')
+                d_scope = d_scope.dropna(subset=[d_metric, 'week'])
+                # Aggregate each offensive position's production against each defense per week.
+                # Team totals across all players of that position, NOT per-player expected stats.
+                d_weekly = d_scope.groupby(['opponent', 'season', 'week'], as_index=False)[d_metric].sum()
+                d_team_weekly = d_weekly.loc[d_weekly['opponent'].eq(d_team)].sort_values('week')
+                if d_team_weekly.empty:
+                    st.warning('No matching offensive production against this defense in the selected season.')
+                else:
+                    league_mean = float(d_weekly[d_metric].mean())
+                    defense_mean = float(d_team_weekly[d_metric].mean())
+                    last_five_mean = float(d_team_weekly[d_metric].tail(5).mean())
+                    k1, k2, k3, k4 = st.columns(4)
+                    k1.metric('Allowed per game', f'{defense_mean:.1f}')
+                    k2.metric('Last 5 allowed/game', f'{last_five_mean:.1f}')
+                    k3.metric('League defense average', f'{league_mean:.1f}')
+                    k4.metric('Games observed', len(d_team_weekly))
+                    if league_mean > 0:
+                        diff = (defense_mean / league_mean - 1) * 100
+                        st.write(f'**{d_team}** allowed **{diff:+.1f}%** relative to the observed league defense average for **{d_position} {MARKETS.get(d_metric, d_metric).lower()}**.')
+                    chart = px.bar(d_team_weekly, x='week', y=d_metric, title=f'{d_team}: {d_position} {MARKETS.get(d_metric, d_metric)} allowed by week', labels={'week':'NFL week', d_metric:'Total allowed'})
+                    st.plotly_chart(chart, use_container_width=True)
+                    comparison = d_weekly.groupby('opponent', as_index=False).agg(allowed_per_game=(d_metric, 'mean'), games=('week', 'count')).sort_values('allowed_per_game', ascending=False)
+                    st.subheader('Compare all defenses')
+                    st.dataframe(comparison.rename(columns={'opponent':'Defense', 'allowed_per_game':'Allowed per game', 'games':'Observed games'}), hide_index=True, use_container_width=True)
+                    st.caption('Higher allowed totals do not necessarily mean a favorable matchup for one player. Team game totals reflect opponent play volume, injuries, game scripts, and other factors. No adjustment is automatically applied to Best Bets.')
+        else:
+            st.info('No opponent team data is available for this season.')
+    st.divider()
+    st.subheader('Scheme analysis — not yet available')
+    st.write('Verified man/zone coverage, Cover 0/1/2/3/4/6, blitz and pressure rates, and slot/outside matchups require additional data. This app does not invent those metrics.')
+    st.warning('The global manual matchup adjustment is an unvalidated scenario input. Leave it at 0% unless testing an explicitly documented assumption.')
 with tabs[6]:
     st.header('Model Evaluation')
     st.warning('The current model is a transparent baseline, not a backtested or calibrated prediction model. Do not treat its probabilities as established hit rates.')

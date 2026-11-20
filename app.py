@@ -93,9 +93,55 @@ def read_csv(upload, required):
     except Exception as exc:
         st.error(f'Unable to read CSV: {exc}'); return None
 
+@st.cache_data(ttl=86400, show_spinner="Fetching a limited NFL Underdog board page...")
+def fetch_underdog_board(api_key):
+    # One compact page per 24-hour cache window. Do not automatically paginate.
+    import requests
+    response = requests.get(
+        "https://underdogapi.com/api/v1/projections",
+        params={"league": "NFL", "view": "compact", "limit": 100},
+        headers={"Authorization": f"Bearer {api_key}",
+                 "X-User-Request": "NFL Prop Lab current NFL research board"},
+        timeout=25,
+    )
+    if response.status_code == 429:
+        raise RuntimeError("API rate limit or monthly credit allowance reached (HTTP 429). Do not retry until credits are available.")
+    response.raise_for_status()
+    payload = response.json()
+    meta = payload.get("meta") or {}
+    if meta.get("is_demo") or str(meta.get("mode", "")).lower() == "demo":
+        raise RuntimeError("Provider returned demonstration data, not real Underdog lines.")
+    rows = []
+    for item in payload.get("data", []):
+        player = item.get("player") or {}
+        market = item.get("market") or {}
+        event = item.get("event") or {}
+        if item.get("is_demo") or item.get("status") not in (None, "active"):
+            continue
+        sides = {str(x.get("side", "")).lower(): x for x in (item.get("selections") or [])}
+        if not any(x.get("available") is True for x in sides.values()):
+            continue
+        raw_line = item.get("line")
+        if raw_line is None or not player.get("name") or not market.get("stat"):
+            continue
+        rows.append({
+            "player": player["name"], "team": player.get("team") or "",
+            "market": str(market["stat"]).strip().lower().replace(" ", "_"),
+            "period": market.get("period") or "Unknown", "line": raw_line,
+            "updated_at": item.get("observed_at") or meta.get("observed_at") or "Unknown",
+            "pick_type": "discounted" if item.get("is_discounted") else (item.get("line_type") or "standard"),
+            "higher_available": sides.get("higher", {}).get("available") is True,
+            "lower_available": sides.get("lower", {}).get("available") is True,
+            "higher_multiplier": sides.get("higher", {}).get("payout_multiplier"),
+            "lower_multiplier": sides.get("lower", {}).get("payout_multiplier"),
+            "opponent": event.get("opponent") or "", "starts_at": event.get("starts_at") or "",
+            "provider_id": item.get("id") or "",
+        })
+    return pd.DataFrame(rows), meta, response.headers.get("X-Credits-Cost", "Unknown")
+
 with st.sidebar:
     st.header('Data inputs')
-    st.caption('Upload historical NFL game logs and a current Underdog board. No live feed is connected.')
+    st.caption('NFL history via nflreadpy; Underdog lines via your private API key. Free API credits are limited.')
     source_mode = st.radio('Historical player data', ['Automatic NFL statistics', 'Upload my own CSV'], index=0)
     if source_mode == 'Automatic NFL statistics':
         selected_seasons = st.multiselect('NFL seasons', [2026, 2025, 2024, 2023], default=[2025, 2026])
@@ -103,7 +149,8 @@ with st.sidebar:
         log_upload = None
     else:
         log_upload = st.file_uploader('Player game logs (CSV)', type='csv', key='logs')
-    lines_upload = st.file_uploader('Underdog projections (CSV)', type='csv', key='lines')
+    board_mode = st.radio('Underdog lines', ['Automatic API', 'Upload CSV'], index=0)
+    lines_upload = st.file_uploader('Underdog projections (CSV)', type='csv', key='lines') if board_mode == 'Upload CSV' else None
     st.markdown('**Optional qualitative matchup inputs**')
     st.caption('Adjustments are research scenarios, not validated prediction improvements.')
     momentum_weight = st.slider('Recent-form weight', 0.0, 0.5, 0.25, 0.05)
@@ -121,7 +168,27 @@ if source_mode == 'Automatic NFL statistics':
             st.sidebar.info('You can switch to CSV upload while we resolve the data source.')
 else:
     logs = read_csv(log_upload, REQUIRED_LOG)
-lines = read_csv(lines_upload, REQUIRED_LINES)
+lines = None
+board_meta = {}
+if board_mode == 'Automatic API':
+    api_key = st.secrets.get("UNDERDOG_API_KEY", "")
+    if not api_key:
+        st.sidebar.error("UNDERDOG_API_KEY is missing from Streamlit Secrets.")
+    else:
+        try:
+            lines, board_meta, credit_cost = fetch_underdog_board(api_key)
+            st.sidebar.success(f"Retrieved {len(lines)} observed NFL offers (cached for 24 hours).")
+            st.sidebar.caption(f"Source observation: {board_meta.get('observed_at', 'Unknown')} | Request credit cost: {credit_cost}")
+            if board_meta.get("next_cursor"):
+                st.sidebar.warning("Partial board: additional pages exist. Not fetched automatically to protect free credits.")
+            if board_meta.get("source_status") not in ("fresh", "live", "ok", None):
+                st.sidebar.warning(f"Provider source status: {board_meta.get('source_status')}")
+            if lines.empty:
+                st.sidebar.warning("No real, available NFL lines were returned in this page.")
+        except Exception as exc:
+            st.sidebar.error(f"Underdog API unavailable: {exc}")
+else:
+    lines = read_csv(lines_upload, REQUIRED_LINES)
 if logs is not None:
     logs['game_date'] = pd.to_datetime(logs['game_date'], errors='coerce')
     logs = logs.dropna(subset=['game_date','player']).sort_values('game_date')
@@ -184,6 +251,7 @@ def analyze(log_bytes, line_bytes, weight, adjustment):
     for _, pick in board.iterrows():
         player=str(pick['player']); market=str(pick['market']).strip().lower(); line=pick['line']
         if market not in history or not np.isfinite(line): continue
+        if str(pick.get('period', 'Full game')).lower() not in ('full game', 'full_game', 'game', 'unknown'): continue
         sample=pd.to_numeric(history.loc[history['player'].astype(str)==player,market],errors='coerce').dropna().tail(17)
         if len(sample)<5: continue
         recent=sample.tail(min(5,len(sample)))
@@ -195,7 +263,10 @@ def analyze(log_bytes, line_bytes, weight, adjustment):
         threshold=float(line)+0.5 if float(line).is_integer() else float(line)
         higher=1-NormalDist(mu=projected,sigma=sd).cdf(threshold)
         lower=1-higher
-        rows.append({'player':player,'market':market,'market_name':MARKETS.get(market,market.replace('_',' ').title()),'line':line,'projection':round(projected,2),'season_mean':round(base,2),'recent_mean':round(last,2),'momentum_delta':round(last-base,2),'sample_games':len(sample),'volatility':round(sd,2),'higher_prob':higher,'lower_prob':lower,'direction':'Higher' if higher>=lower else 'Lower','estimated_prob':max(higher,lower),'updated_at':pick.get('updated_at','Not provided')})
+        if 'higher_available' in pick and str(pick['higher_available']).lower() == 'false': higher = float('nan')
+        if 'lower_available' in pick and str(pick['lower_available']).lower() == 'false': lower = float('nan')
+        if not np.isfinite(higher) and not np.isfinite(lower): continue
+        rows.append({'player':player,'market':market,'market_name':MARKETS.get(market,market.replace('_',' ').title()),'line':line,'projection':round(projected,2),'season_mean':round(base,2),'recent_mean':round(last,2),'momentum_delta':round(last-base,2),'sample_games':len(sample),'volatility':round(sd,2),'higher_prob':higher,'lower_prob':lower,'direction':'Higher' if (np.isfinite(higher) and (not np.isfinite(lower) or higher>=lower)) else 'Lower','estimated_prob':max(x for x in (higher,lower) if np.isfinite(x)),'updated_at':pick.get('updated_at','Not provided')})
     return pd.DataFrame(rows)
 
 results=pd.DataFrame()
@@ -207,15 +278,15 @@ with tabs[0]:
     st.header('Best Bets — research ranking')
     st.info('This is a statistical research ranking, not a verified list of profitable picks. Probabilities are uncalibrated normal-model estimates; Underdog payout multipliers and pick correlations are not included.')
     if results.empty:
-        st.warning('Load NFL statistics and upload a current Underdog projections CSV to generate rankings. No live Underdog feed is connected.')
+        st.warning('No eligible model rankings. Check API status, supported markets, player name matching, and game history.')
     else:
         a,b,c=st.columns(3)
         min_games=a.slider('Minimum games',5,17,8)
         min_prob=b.slider('Minimum estimated probability',0.50,0.90,0.55,0.01)
         standard_only=c.checkbox('Exclude nonstandard pick types (if supplied)',value=True)
         view=results[(results.sample_games>=min_games)&(results.estimated_prob>=min_prob)].copy()
-        if standard_only and lines is not None and 'pick_type' in lines:
-            standard=lines[lines['pick_type'].astype(str).str.lower().eq('standard')][['player','market','line']].drop_duplicates()
+        if standard_only and slate_lines is not None and 'pick_type' in slate_lines:
+            standard=slate_lines[slate_lines['pick_type'].astype(str).str.lower().isin(['standard','balanced'])][['player','market','line']].drop_duplicates()
             view=view.merge(standard,on=['player','market','line'],how='inner')
         view=view.sort_values('estimated_prob',ascending=False)
         if view.empty: st.warning('No props meet these filters. Try adjusting the filters or adding data.')
@@ -236,7 +307,13 @@ with tabs[1]:
         if selected_teams is not None and logs is not None and "team" in logs:
             relevant = logs[logs["team"].astype(str).isin(selected_teams)]
             st.metric("Players with historical records for these teams", relevant["player"].nunique())
-        st.caption("The game selector also filters Best Bets when an uploaded Underdog board includes a 'team' column. The app does not have a live Underdog feed.")
+        st.caption("The selected matchup filters available Underdog offers by team when the API provides team identifiers.")
+
+        if slate_lines is not None and not slate_lines.empty:
+            st.subheader("Observed Underdog NFL projections")
+            st.caption("Only the first cached API page is shown. This may not be the complete board; check observation timestamps and availability.")
+            cols = [c for c in ["player", "team", "opponent", "market", "period", "line", "higher_available", "lower_available", "higher_multiplier", "lower_multiplier", "updated_at"] if c in slate_lines]
+            st.dataframe(slate_lines[cols], hide_index=True, use_container_width=True)
 
 with tabs[2]:
     st.header('Advanced Player Research')

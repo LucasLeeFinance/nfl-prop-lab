@@ -169,6 +169,58 @@ def fetch_current_rosters(season):
     # A roster entry is not proof of being healthy or scheduled to play.
     return roster[["_player_key", "roster_player", "roster_position", "roster_team", "roster_headshot"]].drop_duplicates("_player_key")
 
+@st.cache_data(ttl=21600, show_spinner="Loading NFL injury reports...")
+def fetch_injury_reports(season):
+    import nflreadpy as nfl
+    raw = nfl.load_injuries(seasons=[int(season)])
+    df = raw.to_pandas() if hasattr(raw, "to_pandas") else pd.DataFrame(raw)
+    if df.empty:
+        return df
+    # Preserve original source fields; schemas vary by nflverse release.
+    return df
+
+
+def injury_team_view(injuries, team, season, week=None):
+    if injuries is None or injuries.empty or not team:
+        return pd.DataFrame(), "No injury reports returned for this season."
+    data = injuries.copy()
+    team_col = next((c for c in ("team", "team_abbr", "club_code") if c in data.columns), None)
+    if team_col is None:
+        return pd.DataFrame(), "Injury report does not expose a recognized team field."
+    data = data[data[team_col].astype(str).str.upper().eq(str(team).upper())].copy()
+    if data.empty:
+        return data, "No reported entries for this defense."
+    week_col = next((c for c in ("week", "game_week") if c in data.columns), None)
+    if week_col:
+        data[week_col] = pd.to_numeric(data[week_col], errors="coerce")
+        weeks = data[week_col].dropna()
+        if not weeks.empty:
+            # Never substitute a future week or imply the report is current.
+            eligible = weeks[weeks <= int(week)] if week is not None else weeks
+            if eligible.empty:
+                return pd.DataFrame(), "No published injury reports at or before the selected week."
+            latest = int(eligible.max())
+            data = data[data[week_col].eq(latest)].copy()
+    else:
+        latest = None
+    name_col = next((c for c in ("full_name", "player_name", "player", "name") if c in data), None)
+    pos_col = next((c for c in ("position", "pos") if c in data), None)
+    status_col = next((c for c in ("report_status", "game_status", "status", "injury_status") if c in data), None)
+    practice_col = next((c for c in ("practice_status", "practice_participation", "practice_status_description") if c in data), None)
+    detail_col = next((c for c in ("report_primary_injury", "injury", "primary_injury") if c in data), None)
+    keep = [(name_col,"Player"),(pos_col,"Position"),(status_col,"Game status"),(practice_col,"Practice"),(detail_col,"Injury")]
+    cols = {col: label for col,label in keep if col is not None}
+    if not cols:
+        return pd.DataFrame(), "Injury report fields were not recognized."
+    result = data[list(cols)].rename(columns=cols)
+    if "Position" in result:
+        # Only defensive personnel; include DB position variants and front seven.
+        defensive = {"CB","DB","S","FS","SS","LB","ILB","OLB","MLB","DE","DT","DL","NT","EDGE"}
+        result = result[result["Position"].astype(str).str.upper().isin(defensive)]
+    result = result.drop_duplicates()
+    note = f"Latest available report week: {latest}." if latest is not None else "Report week unavailable."
+    return result, note
+
 REQUIRED_LOG = ['player','game_date','opponent']
 REQUIRED_LINES = ['player','market','line']
 
@@ -374,6 +426,15 @@ if lines is not None:
         # unknown names remain visible rather than silently hiding real offers.
     if "team" in lines:
         lines["team"] = lines["team"].fillna("").astype(str).str.upper().str.strip()
+
+# Free nflverse injury data; never call a paid provider for defensive context.
+injury_reports = None
+injury_error = None
+if current_season is not None:
+    try:
+        injury_reports = fetch_injury_reports(current_season)
+    except Exception as exc:
+        injury_error = str(exc)
 
 # Shared matchup selector. Selecting a game filters the research and available board.
 schedule = None
@@ -787,6 +848,51 @@ with tabs[3]:
                             st.info('No verified position-specific historical games available.')
                 else:
                     st.caption('Defensive matchup research requires NFL opponent, season, week and roster-position data.')
+                st.divider()
+                st.subheader('Defensive personnel · Injury report')
+                if upcoming_opponent or 'd_team' in locals():
+                    injury_defense = d_team if 'd_team' in locals() else upcoming_opponent
+                    selected_injury_week = None
+                    if 'selected_week' in globals() and selected_week is not None:
+                        try:
+                            selected_injury_week = int(selected_week)
+                        except (ValueError, TypeError):
+                            pass
+                    report, report_note = injury_team_view(injury_reports, injury_defense, current_season, selected_injury_week)
+                    st.caption(f"{injury_defense} · nflverse injury reports · {report_note} Entries are not confirmation of a final inactive list.")
+                    if report.empty:
+                        st.info('No verified defensive injury entries available for this selection.')
+                    else:
+                        st.dataframe(report, hide_index=True, use_container_width=True)
+                        st.caption('Practice and game statuses can change. Verify final inactives near kickoff. No automatic injury-based projection adjustment is applied.')
+                else:
+                    st.info('Select a defensive opponent to review reported defensive injuries.')
+                if injury_error:
+                    st.caption(f'Injury data unavailable: {injury_error}')
+                st.divider()
+                st.subheader('Scheme scouting · Man, zone and fronts')
+                st.markdown('**Verified free reference:** [Sharp Football Analysis — defensive coverage tendencies](https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-schemes/). Includes published team man/zone rates and safety-shell tendencies. Open the source to inspect the selected defense.')
+                st.caption('Coverage describes man/zone assignments; a 4–3 front describes defensive personnel alignment. These are distinct. The existing nflverse weekly game logs do not provide reliable player-versus-coverage splits.')
+                st.info('Player-versus-man, player-versus-zone, Cover 1/3, and 4–3 efficiency: data unavailable in the connected free feeds. No scheme advantage is scored or assumed.')
+                with st.expander('Add verified scheme research (optional CSV)', expanded=False):
+                    st.caption('For licensed or manually compiled source data, upload a CSV with columns: team, season, man_pct, zone_pct, source, observed_at. The app will display the data, not infer player performance.')
+                    scheme_upload = st.file_uploader('Defensive coverage CSV', type='csv', key='profile_scheme_csv')
+                    if scheme_upload is not None:
+                        try:
+                            scheme = pd.read_csv(scheme_upload)
+                            required = {'team','season','man_pct','zone_pct','source','observed_at'}
+                            if not required.issubset(scheme.columns):
+                                st.warning('Missing columns: ' + ', '.join(sorted(required-set(scheme.columns))))
+                            else:
+                                active_defense = d_team if 'd_team' in locals() else upcoming_opponent
+                                rows = scheme[scheme['team'].astype(str).str.upper().eq(str(active_defense).upper())].copy()
+                                if rows.empty:
+                                    st.info('No scheme data for the selected opponent.')
+                                else:
+                                    st.dataframe(rows, hide_index=True, use_container_width=True)
+                                    st.caption('User-supplied research; verify source dates and definitions. These rates do not establish player-specific performance.')
+                        except Exception as exc:
+                            st.warning(f'Unable to read scheme CSV: {exc}')
                 st.divider()
                 st.subheader('Underdog line comparison & game results')
                 matching_lines = lines[(lines["_player_key"].eq(normalized_player(player))) & (lines["market"].eq(market))] if lines is not None and "_player_key" in lines else pd.DataFrame()

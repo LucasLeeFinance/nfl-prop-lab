@@ -55,6 +55,30 @@ section[data-testid="stSidebar"] [data-testid="stRadio"] [role="radio"] {accent-
 .hero-title {font-size:26px;font-weight:850;letter-spacing:-.9px;color:#f5f8fd}
 .hero-sub {font-size:13px;color:#99abc4;margin-top:3px;margin-bottom:14px}
 .quick-tag {display:inline-block;background:#1b2b40;color:#c9d8eb;border:1px solid #30445e;border-radius:9px;padding:6px 10px;margin-right:6px;font-size:12px}
+
+/* V19 compact dark prop dashboard inspired by the supplied reference layout */
+.stApp {background:#080a0d!important;color:#f3f4f6!important}
+.block-container {max-width:1720px!important;padding:0.65rem 1.2rem 2rem!important}
+section[data-testid="stSidebar"] {background:#0d1014!important;border-right:1px solid #24272b!important;min-width:235px!important;max-width:255px!important}
+[data-testid="stVerticalBlock"] {gap:.4rem!important}
+h1,h2,h3 {letter-spacing:-.035em!important} h1{font-size:1.55rem!important} h2{font-size:1.18rem!important} h3{font-size:1.03rem!important}
+[data-testid="stMetric"] {background:#111417!important;border:1px solid #22282c!important;border-radius:10px!important;padding:9px 12px!important;min-height:70px!important;box-shadow:none!important}
+[data-testid="stMetricValue"] {font-size:1.38rem!important;color:#f8fafc!important}
+[data-testid="stMetricLabel"] {font-size:.72rem!important}
+[data-testid="stPlotlyChart"] {background:#0d0f12!important;border:1px solid #22262b!important;border-radius:13px!important}
+[data-testid="stExpander"] {background:#111417!important;border:1px solid #24282d!important}
+[data-testid="stDataFrame"] {border:1px solid #252a2e!important}
+.stButton button {border-radius:9px!important;background:#161a1e!important;border:1px solid #31373c!important}
+.stButton button[kind="primary"] {background:#14cda1!important;color:#08110f!important}
+[data-baseweb="select"]>div,[data-baseweb="input"]>div {background:#161a1e!important;border:1px solid #292e33!important}
+.nfl-brand {margin-bottom:2px!important}.nfl-mark {background:#132c2a!important;width:35px!important;height:35px!important;font-size:19px!important;box-shadow:none!important}
+.nfl-name {font-size:19px!important}.nfl-sub {font-size:9px!important;color:#45d2ae!important}
+.nfl-pill {font-size:10px!important;padding:3px 8px!important;margin-bottom:5px!important;background:#103027!important;border-color:#1f5547!important}
+.nfl-muted-pill {background:#161b20!important;border-color:#2b3238!important;color:#9aa7b4!important}
+.workspace-kicker {color:#49cfae!important}.hero-title {font-size:23px!important}.hero-sub{margin-bottom:7px!important}
+[data-testid="stRadio"] [role="radiogroup"] {gap:2px!important}
+[data-testid="stRadio"] label {padding:4px 0!important}
+.profile-eyebrow {color:#48d5ad!important}
 </style>""", unsafe_allow_html=True)
 st.markdown('<div class="nfl-brand"><div class="nfl-mark">🏈</div><div><div class="nfl-name">NFL PROP LAB</div><div class="nfl-sub">Player prop research workstation</div></div></div>', unsafe_allow_html=True)
 st.markdown('<span class="nfl-pill">UNDERDOG HIGHER / LOWER</span><span class="nfl-pill nfl-muted-pill">OFFENSE + KICKERS</span><span class="nfl-pill nfl-muted-pill">HISTORICAL MATCHUP RESEARCH</span>', unsafe_allow_html=True)
@@ -742,9 +766,7 @@ if nav_page == '🏟️ Games':
             st.dataframe(slate_lines[cols], hide_index=True, use_container_width=True)
 
 if nav_page == '👤 Player Research':
-    st.header('Player Research')
-    st.caption('One player. One market. Performance, opponent context, and observed lines in one workspace.')
-    st.caption('Player-first research: performance, usage, Underdog lines, and opponent defense in one view.')
+    st.markdown('<div class="workspace-kicker">PLAYER ANALYTICS</div><div class="hero-title">Player Research</div>', unsafe_allow_html=True)
     if logs is None:
         st.info('Load automatic NFL statistics or upload a player game-log CSV to start.')
     else:
@@ -787,12 +809,11 @@ if nav_page == '👤 Player Research':
             st.markdown(f'<div class="profile-eyebrow">PLAYER PROFILE</div><div style="font-size:30px;font-weight:800;letter-spacing:-1.2px;color:#f3f8ff">{player}</div>', unsafe_allow_html=True)
             st.caption(' · '.join(x for x in (position if position not in ('nan','None') else '', team_name) if x))
             st.caption('NFL roster headshot when available · No guessed player photos')
-        st.divider()
         available = [m for m in MARKETS if m in logs and logs.loc[logs.player.astype(str).eq(player), m].notna().any()]
         if not available:
             st.warning('No supported market columns found for this player.')
         else:
-            market_col, window_col = st.columns([2, 1])
+            market_col, window_col = st.columns([2.4, 1])
             market = market_col.selectbox('Stat market', available, format_func=lambda x: MARKETS[x])
             full = logs[logs.player.astype(str).eq(player)].dropna(subset=[market]).copy()
             full = full.sort_values(['season','week','game_date'] if {'season','week'}.issubset(full.columns) else ['game_date'])
@@ -801,8 +822,9 @@ if nav_page == '👤 Player Research':
                 chosen_seasons = st.multiselect('Seasons to display', seasons, default=seasons, key='research_seasons')
                 full = full[full['season'].isin(chosen_seasons)]
             window = window_col.selectbox('Games to display', ['All games','Last 3','Last 5','Last 10','Last 17'], index=2)
-            opponent_choices = ['All opponents'] + sorted(full['opponent'].dropna().astype(str).unique().tolist())
-            opponent_choice = st.selectbox('Historical opponent filter', opponent_choices)
+            with st.expander('Advanced game filters', expanded=False):
+                opponent_choices = ['All opponents'] + sorted(full['opponent'].dropna().astype(str).unique().tolist())
+                opponent_choice = st.selectbox('Historical opponent filter', opponent_choices)
             if opponent_choice != 'All opponents':
                 full = full[full['opponent'].astype(str).eq(opponent_choice)]
             window_n = {'All games':None,'Last 3':3,'Last 5':5,'Last 10':10,'Last 17':17}[window]
@@ -816,50 +838,100 @@ if nav_page == '👤 Player Research':
                 b.metric('Last 5 average', f'{vals.tail(5).mean():.1f}')
                 c.metric('Games displayed', len(vals))
                 d.metric('Std. deviation', f'{vals.std():.1f}' if len(vals)>1 else 'N/A')
-                st.subheader('Underdog line comparison & game results')
-                matching_lines = lines[(lines["_player_key"].eq(normalized_player(player))) & (lines["market"].eq(market))] if lines is not None and "_player_key" in lines else pd.DataFrame()
-                if not matching_lines.empty:
-                    chosen_line = st.selectbox("Observed Underdog line", sorted(matching_lines["line"].dropna().astype(float).unique().tolist()), key=f"observed_{normalized_player(player)}_{market}")
-                    st.caption("Line selected from the retrieved API board. Check its observation time before use.")
-                    line = float(chosen_line)
-                else:
-                    st.info('No observed Underdog line for this player and market in the retrieved board. Historical research is available below; line comparisons are optional.')
-                    use_manual = st.checkbox('Compare against a hypothetical line', value=False, key='research_use_manual_line')
-                    line = st.number_input('Hypothetical comparison line', min_value=0.0, value=float(round(vals.mean() * 2) / 2), step=0.5, key=f'research_line_{normalized_player(player)}_{market}') if use_manual else None
-                if line is not None:
-                    higher = int((vals > line).sum()); lower = int((vals < line).sum()); pushes = int((vals == line).sum())
-                    h,l,p = st.columns(3)
-                    h.metric('Higher in sample', f'{higher}/{len(vals)}')
-                    l.metric('Lower in sample', f'{lower}/{len(vals)}')
-                    p.metric('Exactly on line', pushes)
-                    st.caption('Historical counts only, not predicted probabilities. A hypothetical line is not an actual Underdog offer.')
-                else:
-                    st.caption('Line comparison hidden until an observed line is available or you enable a hypothetical comparison.')
-                plot = view.copy()
-                plot['Game'] = (plot['season'].astype('Int64').astype(str) + ' W' + plot['week'].astype('Int64').astype(str)) if {'season','week'}.issubset(plot.columns) else plot['game_date'].dt.strftime('%Y-%m-%d')
-                # Each game's bar is colored relative to the selected line, not by an invented betting edge.
-                plot['Result'] = ('No line' if line is None else 'Lower')
-                if line is not None:
-                    plot['Result'] = np.select([plot[market] > line, plot[market] < line], ['Higher', 'Lower'], default='Push')
-                palette = {'Higher':'#42d4a3', 'Lower':'#f17c83', 'Push':'#f4c16a', 'No line':'#5a91d7'}
-                fig = px.bar(plot, x='Game', y=market, color='Result',
-                    color_discrete_map=palette, hover_data=['opponent'],
-                    title=f'{player} · {MARKETS[market]} · game log')
-                if line is not None:
-                    fig.add_hline(y=line, line_dash='dash', line_color='#e9eff8',
-                        annotation_text='Observed Underdog line' if not matching_lines.empty else 'Hypothetical line')
-                fig.update_layout(template='plotly_dark', paper_bgcolor='#101a2a', plot_bgcolor='#101a2a',
-                    font=dict(color='#dce8f5'), margin=dict(l=15,r=15,t=55,b=20),
-                    legend_title_text='', bargap=.23, xaxis=dict(showgrid=False),
-                    yaxis=dict(gridcolor='#26364b'), hovermode='x unified')
-                st.plotly_chart(fig, use_container_width=True)
-                if line is not None:
-                    st.caption('Green = above comparison line; red = below; amber = exactly equal. Colors describe past results, not future probabilities.')
-                cols = [c for c in ['season','week','game_date','team','opponent',market,'targets','carries','pass_attempts'] if c in view.columns]
-                cols = list(dict.fromkeys(cols))
-                st.dataframe(view[cols].iloc[::-1], hide_index=True, use_container_width=True)
-                st.download_button('Download filtered game logs', view.to_csv(index=False), f'{re.sub(r"[^a-zA-Z0-9]+", "_", player)}_game_logs.csv', 'text/csv')
-
+                research_main, research_side = st.columns([2.25, 1], gap='medium')
+                with research_main:
+                    st.markdown('#### Game results · Higher / Lower')
+                    matching_lines = lines[(lines["_player_key"].eq(normalized_player(player))) & (lines["market"].eq(market))] if lines is not None and "_player_key" in lines else pd.DataFrame()
+                    if not matching_lines.empty:
+                        chosen_line = st.selectbox("Observed Underdog line", sorted(matching_lines["line"].dropna().astype(float).unique().tolist()), key=f"observed_{normalized_player(player)}_{market}")
+                        st.caption("Line selected from the retrieved API board. Check its observation time before use.")
+                        line = float(chosen_line)
+                    else:
+                        st.caption('No observed line on the limited API board. Optionally compare a hypothetical line.')
+                        use_manual = st.checkbox('Compare against a hypothetical line', value=False, key='research_use_manual_line')
+                        line = st.number_input('Hypothetical comparison line', min_value=0.0, value=float(round(vals.mean() * 2) / 2), step=0.5, key=f'research_line_{normalized_player(player)}_{market}') if use_manual else None
+                    if line is not None:
+                        higher = int((vals > line).sum()); lower = int((vals < line).sum()); pushes = int((vals == line).sum())
+                        h,l,p = st.columns(3)
+                        h.metric('Higher in sample', f'{higher}/{len(vals)}')
+                        l.metric('Lower in sample', f'{lower}/{len(vals)}')
+                        p.metric('Exactly on line', pushes)
+                        st.caption('Historical counts only, not predicted probabilities. A hypothetical line is not an actual Underdog offer.')
+                    else:
+                        st.caption('Historical game totals; no comparison line selected.')
+                    plot = view.copy()
+                    plot['Game'] = (plot['season'].astype('Int64').astype(str) + ' W' + plot['week'].astype('Int64').astype(str)) if {'season','week'}.issubset(plot.columns) else plot['game_date'].dt.strftime('%Y-%m-%d')
+                    # Each game's bar is colored relative to the selected line, not by an invented betting edge.
+                    plot['Result'] = ('No line' if line is None else 'Lower')
+                    if line is not None:
+                        plot['Result'] = np.select([plot[market] > line, plot[market] < line], ['Higher', 'Lower'], default='Push')
+                    palette = {'Higher':'#12d69d', 'Lower':'#e33e1a', 'Push':'#f3c36b', 'No line':'#4386b9'}
+                    fig = px.bar(plot, x='Game', y=market, color='Result',
+                        color_discrete_map=palette, hover_data=['opponent'],
+                        title=f'{player} · {MARKETS[market]}')
+                    if line is not None:
+                        fig.add_hline(y=line, line_dash='dash', line_color='#35d4a8',
+                            annotation_text='Observed Underdog line' if not matching_lines.empty else 'Hypothetical line')
+                    fig.update_layout(template='plotly_dark', paper_bgcolor='#0c0d0f', plot_bgcolor='#0c0d0f',
+                        font=dict(color='#dce8f5',size=11), height=355, margin=dict(l=10,r=10,t=48,b=15),
+                        legend_title_text='', bargap=.23, xaxis=dict(showgrid=False),
+                        yaxis=dict(gridcolor='#24272a'), hovermode='x unified')
+                    st.plotly_chart(fig, use_container_width=True)
+                    if line is not None:
+                        st.caption('Green = above comparison line; red = below; amber = exactly equal. Colors describe past results, not future probabilities.')
+                    cols = [c for c in ['season','week','game_date','team','opponent',market,'targets','carries','pass_attempts'] if c in view.columns]
+                    cols = list(dict.fromkeys(cols))
+                    with st.expander('Game-by-game data', expanded=False):
+                            st.dataframe(view[cols].iloc[::-1], hide_index=True, use_container_width=True)
+                    st.download_button('Download filtered game logs', view.to_csv(index=False), f'{re.sub(r"[^a-zA-Z0-9]+", "_", player)}_game_logs.csv', 'text/csv')
+                with research_side:
+                    st.markdown('#### Matchup intelligence')
+                    st.caption('Current-season defensive production allowed. Rankings: #1 = toughest defense.')
+                    possible_pos = str(position).upper()
+                    defense_target = None
+                    if selected_teams and team_name in selected_teams:
+                        defense_target = next(iter(selected_teams - {team_name}), None)
+                    elif schedule is not None and not schedule.empty:
+                        candidate_games = schedule.copy()
+                        candidate_games['kickoff_time'] = pd.to_datetime(candidate_games.get('gameday'), utc=True, errors='coerce')
+                        candidate_games = candidate_games[(candidate_games['kickoff_time'] >= pd.Timestamp.now(tz='UTC').normalize()) & ((candidate_games['home_team'].astype(str) == team_name) | (candidate_games['away_team'].astype(str) == team_name))]
+                        if not candidate_games.empty:
+                            next_row = candidate_games.sort_values('kickoff_time').iloc[0]
+                            defense_target = next_row['away_team'] if next_row['home_team'] == team_name else next_row['home_team']
+                    if defense_target:
+                        st.markdown(f'**vs {defense_target}**')
+                    else:
+                        st.caption('Choose a matchup in the sidebar to see opponent context.')
+                    if defense_target and possible_pos in ('QB','RB','WR','TE') and {'season','week','opponent','roster_position'}.issubset(logs.columns):
+                        def_pool = logs[logs['roster_position'].fillna('').astype(str).str.upper().eq(possible_pos)].copy()
+                        if current_season is not None:
+                            def_pool = def_pool[def_pool['season'].eq(current_season)]
+                        if market in def_pool.columns and not def_pool.empty:
+                            def_pool[market] = pd.to_numeric(def_pool[market], errors='coerce')
+                            per_game = def_pool.dropna(subset=[market]).groupby(['opponent','season','week'], as_index=False)[market].sum()
+                            by_team = per_game.groupby('opponent')[market].agg(['mean','count']).sort_values('mean')
+                            if defense_target in by_team.index:
+                                defense_rank = int(by_team.index.get_loc(defense_target)) + 1
+                                allowed = float(by_team.loc[defense_target, 'mean'])
+                                rank_color = '#f87171' if defense_rank <= 10 else '#4ade80' if defense_rank >= 23 else '#f5c76b'
+                                st.markdown(f'<div style="background:#15191d;border:1px solid #292e33;border-radius:12px;padding:12px;margin:8px 0"><div style="font-size:11px;color:#a0aab5">{MARKETS.get(market,market)} allowed / game</div><div style="font-size:25px;font-weight:800;color:{rank_color}">{allowed:.1f} <span style="font-size:13px;color:#a4adb6">· rank #{defense_rank} / {len(by_team)}</span></div></div>',unsafe_allow_html=True)
+                                st.caption(f'Based on {int(by_team.loc[defense_target,"count"])} charted team games in the weekly player-stat feed; coverage may be incomplete.')
+                            else:
+                                st.caption('No matching defensive allowance records for this market.')
+                        else:
+                            st.caption('No supported defensive allowance records.')
+                    st.markdown('#### Defensive injuries')
+                    if defense_target and injury_reports is not None and not injury_reports.empty:
+                        recent_injuries, injury_note = injury_team_view(injury_reports, defense_target, current_season, filter_week)
+                        if not recent_injuries.empty:
+                            st.dataframe(recent_injuries.head(7), hide_index=True, use_container_width=True, height=240)
+                            st.caption(injury_note)
+                        else:
+                            st.caption(injury_note)
+                    else:
+                        st.caption('No opponent injury report available.')
+                    st.markdown('#### Scheme research')
+                    st.caption('Man/zone and fronts require verified charting. See detailed scheme scouting below; missing data is never inferred.')
                 st.markdown('---')
                 # Usage is a leading indicator of opportunity, not a guaranteed result.
                 st.subheader('Opportunity and usage trends')

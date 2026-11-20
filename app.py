@@ -94,6 +94,37 @@ section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {gap:.35rem!imp
 [data-testid="stExpander"] details summary {padding:7px 11px!important}
 </style>""", unsafe_allow_html=True)
 st.markdown('<div class="nfl-brand"><div class="nfl-mark">🏈</div><div><div class="nfl-name">NFL PROP LAB</div><div class="nfl-sub">Player prop research workstation</div></div></div>', unsafe_allow_html=True)
+st.markdown("""<style>
+/* V22 — high-density interactive prop terminal */
+.block-container{padding-top:2.95rem!important;max-width:1850px!important;padding-left:1rem!important;padding-right:1rem!important}
+header[data-testid="stHeader"]{height:2.45rem!important;background:#090b10!important}
+.stApp{background:#080a10!important}
+[data-testid="stVerticalBlock"]{gap:.32rem!important}
+[data-testid="stHorizontalBlock"]{gap:.55rem!important}
+[data-testid="stSelectbox"]>div,[data-testid="stNumberInput"]>div{min-height:32px!important}
+[data-testid="stSelectbox"] [data-baseweb="select"]>div{min-height:33px!important;border-radius:8px!important}
+[data-testid="stWidgetLabel"]{margin-bottom:1px!important}
+[data-testid="stWidgetLabel"] p{font-size:9px!important;letter-spacing:.08em!important}
+[data-testid="stPills"] button,[data-testid="stSegmentedControl"] button{background:#171b26!important;border:1px solid #303747!important;color:#bdc7d8!important;border-radius:8px!important;padding:5px 11px!important;font-weight:750!important}
+[data-testid="stPills"] button[aria-pressed="true"],[data-testid="stSegmentedControl"] button[aria-checked="true"]{background:#173c35!important;color:#64e6bc!important;border-color:#279f80!important}
+[data-testid="stPlotlyChart"]{border:1px solid #242b39!important;border-radius:13px!important}
+[data-testid="stDataFrame"]{border-radius:10px!important}
+.profile-title{font-size:33px!important;letter-spacing:-1.15px!important;line-height:1.03!important}
+.profile-title span{font-size:13px!important;color:#8ee7d2!important}
+.profile-sub{font-size:11px!important}
+.mini-score{min-height:58px!important;padding:8px 11px!important;background:#111723!important;border:1px solid #263044!important;border-radius:10px!important}
+.mini-score strong{font-size:23px!important;letter-spacing:-.6px!important}
+.compact-section{margin:7px 0 4px!important;font-size:11px!important;letter-spacing:.07em!important}
+.defense-stat{padding:9px 10px!important;border-radius:8px!important;background:#111722!important;border:1px solid #263044!important;margin:3px 0!important;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.defense-stat span{font-size:12px!important;flex:1}
+.defense-stat strong{font-size:22px!important;color:#f2f5fa!important}
+.defense-stat b{font-size:15px!important}
+.profile-rail-title{font-size:12px;font-weight:850;color:#e7f0fa;letter-spacing:.07em;margin:8px 0 5px}
+.profile-note{font-size:10px;color:#7f8da2}
+[data-testid="stPopover"] button{border-radius:8px!important}
+section[data-testid="stSidebar"]{position:sticky!important;top:0!important;height:100vh!important;overflow-y:auto!important}
+@media(max-width:850px){.profile-title{font-size:25px!important}.block-container{padding-left:.6rem!important;padding-right:.6rem!important}}
+</style>""",unsafe_allow_html=True)
 st.markdown('<span class="nfl-pill">UNDERDOG HIGHER / LOWER</span><span class="nfl-pill nfl-muted-pill">OFFENSE + KICKERS</span><span class="nfl-pill nfl-muted-pill">HISTORICAL MATCHUP RESEARCH</span>', unsafe_allow_html=True)
 
 st.markdown("""<style>
@@ -514,13 +545,13 @@ def fetch_underdog_board(api_key):
 NAV_ITEMS = ['🏠 Dashboard', '👤 Player Research', '🏟️ Games', '🏆 Best Bets', '📈 Trends', '⚙️ Data & Model']
 with st.sidebar:
     st.markdown('### NFL PROP LAB')
-    nav_page = st.radio('Workspace', NAV_ITEMS, index=0, label_visibility='collapsed', key='primary_navigation')
+    nav_page = st.radio('Workspace', NAV_ITEMS, index=1, label_visibility='collapsed', key='primary_navigation')
     st.divider()
     with st.expander('Data sources & model settings', expanded=False):
         st.caption('NFL history via nflreadpy; Underdog lines via your private API key. Free API credits are limited.')
         source_mode = st.radio('Historical player data', ['Automatic NFL statistics', 'Upload my own CSV'], index=0)
         if source_mode == 'Automatic NFL statistics':
-            selected_seasons = st.multiselect('NFL seasons', [2026, 2025, 2024, 2023], default=[2025, 2026])
+            selected_seasons = st.multiselect('NFL seasons', [2026, 2025, 2024, 2023], default=[2026])
             st.caption('Source: nflverse via nflreadpy. Weekly statistics may update after games; some markets require other sources.')
             log_upload = None
         else:
@@ -727,7 +758,7 @@ if logs is not None and slate_lines is not None and not slate_lines.empty:
 
 # Compact application navigation: only the selected workspace is rendered.
 
-st.markdown('<div class="workspace-kicker">RESEARCH WORKSPACE</div>', unsafe_allow_html=True)
+# Workspace heading is incorporated into the page-specific navigation.
 
 if nav_page == '🏠 Dashboard':
     st.markdown('<div class="hero-title">Current Prop Board</div><div class="hero-sub">Search the observed Underdog board, filter the slate, and open player research from the sidebar.</div>', unsafe_allow_html=True)
@@ -843,7 +874,7 @@ if nav_page == '👤 Player Research':
             requested = st.session_state.pop('requested_player', None)
             if requested in players: st.session_state['research_player'] = requested
             if st.session_state.get('research_player') not in players: st.session_state.pop('research_player', None)
-            top_player, top_market, top_season, top_window = st.columns([2.3,2.0,1.05,1.05], gap='small')
+            top_player, top_market, top_season, top_window = st.columns([2.5,2.25,.9,.9], gap='small')
             player = top_player.selectbox('PLAYER', players, key='research_player')
             profile = player_pool[player_pool['player'].astype(str).eq(player)].sort_values('game_date')
             latest = profile.iloc[-1]
@@ -853,12 +884,12 @@ if nav_page == '👤 Player Research':
             team = roster_team if roster_team not in ('','NAN','NONE') else str(latest.get('team','')).upper().strip()
             portrait = latest.get('roster_headshot')
             permitted = position_markets.get(pos, list(MARKETS))
-            available = [m for m in permitted if m in logs and pd.to_numeric(profile[m],errors='coerce').notna().any()]
+            available = [m for m in permitted if m in logs and pd.to_numeric(profile[m],errors='coerce').notna().any() and (pd.to_numeric(profile[m],errors='coerce').fillna(0).abs().sum()>0)]
             if not available:
                 st.info('No supported statistics for this player.')
             else:
                 market_key = f'profile_market_{normalized_player(player)}'
-                market = top_market.selectbox('PROP MARKET', available, format_func=lambda m:MARKETS.get(m,m), key=market_key)
+                market = top_market.selectbox('PROP', available, format_func=lambda m:MARKETS.get(m,m), key=market_key)
                 full = logs.loc[logs['player'].astype(str).eq(player)].copy()
                 full[market] = pd.to_numeric(full[market],errors='coerce')
                 full = full.dropna(subset=[market]).sort_values(['season','week','game_date'])
@@ -868,7 +899,7 @@ if nav_page == '👤 Player Research':
                     chosen_year = top_season.selectbox('SEASON',years,index=years.index(season_default),key='profile_single_season')
                     full = full.loc[full['season'].eq(chosen_year)].copy()
                 else: chosen_year = None
-                window = top_window.selectbox('GAMES',['L5','L10','L20','All'],index=0,key='profile_window')
+                window = top_window.selectbox('SAMPLE',['L5','L10','L20','All'],index=0,key='profile_window')
                 with st.popover('More filters', use_container_width=False):
                     opponents = ['All opponents']+sorted(full['opponent'].dropna().astype(str).unique().tolist())
                     opponent_filter = st.selectbox('Historical opponent',opponents,key='profile_history_opponent')
@@ -897,11 +928,11 @@ if nav_page == '👤 Player Research':
                             opponent = str(game['away_team'] if game['home_team']==team else game['home_team'])
                     name_col, info_col = st.columns([.10,.90],vertical_alignment='center',gap='small')
                     with name_col:
-                        if isinstance(portrait,str) and portrait.startswith('https://'): st.image(portrait,width=65)
+                        if isinstance(portrait,str) and portrait.startswith('https://'): st.image(portrait,width=82)
                         else: st.markdown('🏈')
                     with info_col:
-                        st.markdown(f'<div class="profile-title">{player} <span>{pos} · {team} · {MARKETS.get(market,market)}</span></div>',unsafe_allow_html=True)
-                        st.markdown(f'<div class="profile-sub">{("vs "+opponent) if opponent else "Opponent not confirmed"} &nbsp;·&nbsp; {chosen_year or "All seasons"} &nbsp;·&nbsp; {window} game sample</div>',unsafe_allow_html=True)
+                        st.markdown(f'<div class="profile-title">{player} <span>{pos} · {team}</span></div>',unsafe_allow_html=True)
+                        st.markdown(f'<div class="profile-sub">{MARKETS.get(market,market)} &nbsp;·&nbsp; {("vs "+opponent) if opponent else "Opponent unconfirmed"} &nbsp;·&nbsp; {chosen_year or "All seasons"}</div>',unsafe_allow_html=True)
                     matching = lines.loc[lines['_player_key'].eq(normalized_player(player)) & lines['market'].eq(market)] if lines is not None and '_player_key' in lines else pd.DataFrame()
                     observed = not matching.empty
                     line = None
@@ -930,9 +961,13 @@ if nav_page == '👤 Player Research':
                         plot['Result'] = 'No line' if line is None else np.select([plot[market]>line,plot[market]<line],['Higher','Lower'],default='Push')
                         fig=px.bar(plot,x='Game',y=market,color='Result',color_discrete_map={'Higher':'#12d69d','Lower':'#e33e1a','Push':'#f0c36b','No line':'#368cbd'},hover_data=['opponent'])
                         if line is not None: fig.add_hline(y=line,line_dash='dash',line_color='#d4b86a')
-                        fig.update_layout(template='plotly_dark',height=292,margin=dict(l=2,r=2,t=10,b=8),paper_bgcolor='#0b0d10',plot_bgcolor='#0b0d10',showlegend=False,font=dict(size=10,color='#b9c4d0'),xaxis=dict(showgrid=False,title=None),yaxis=dict(gridcolor='#24272c',title=None),bargap=.22)
+                        fig.update_layout(template='plotly_dark',height=260,margin=dict(l=2,r=2,t=5,b=5),paper_bgcolor='#0b0d10',plot_bgcolor='#0b0d10',showlegend=False,font=dict(size=10,color='#b9c4d0'),xaxis=dict(showgrid=False,title=None),yaxis=dict(gridcolor='#24272c',title=None),bargap=.22)
                         st.plotly_chart(fig,use_container_width=True,config={'displayModeBar':False})
-                        with st.expander('Game logs · download',expanded=False):
+                        if line is not None and len(vals):
+                            higher_pct = 100*above/len(vals)
+                            st.markdown(f'<div style="display:flex;gap:10px;align-items:center;margin:-1px 0 5px;font-size:11px"><b style="color:#4fe4b0">HIGHER {higher_pct:.0f}%</b><div style="flex:1;background:#a83d2e;border-radius:7px;height:8px;overflow:hidden"><div style="width:{higher_pct:.1f}%;background:#2bd8a0;height:100%"></div></div><b style="color:#f17b6c">LOWER {100*below/len(vals):.0f}%</b></div>',unsafe_allow_html=True)
+
+                        with st.popover('Game log / export'):
                             cols=[c for c in ['season','week','opponent',market,'targets','carries','pass_attempts'] if c in view]
                             shown=view[cols].iloc[::-1].copy()
                             for c in shown.select_dtypes(include='number').columns:
@@ -948,22 +983,10 @@ if nav_page == '👤 Player Research':
                             if len(series)<3: continue
                             r=series.tail(5); p=series.iloc[-10:-5]
                             usage.append({'Stat':MARKETS.get(m,m),'L5':fmt(r.mean()),'Previous 5':fmt(p.mean()) if len(p)>=3 else '—','Change':fmt(r.mean()-p.mean()) if len(p)>=3 else '—'})
-                        if usage: st.dataframe(pd.DataFrame(usage),hide_index=True,use_container_width=True,height=min(38+35*len(usage),185))
+                        if usage:
+                            for u in usage:
+                                st.markdown(f'<div class="defense-stat"><span>{u["Stat"]}</span><strong>{u["L5"]}</strong><b style="color:#7bdfc5">{u["Change"]}</b></div>',unsafe_allow_html=True)
                         else: st.caption('Opportunity data unavailable for this player.')
-                        with st.expander('Advanced scouting · FTN schemes and historical defense',expanded=False):
-                            st.caption('FTN charting is descriptive and does not measure player-versus-man/zone efficiency.')
-                            if opponent and chosen_year is not None:
-                                if st.checkbox('Load FTN charting',key='load_ftn_on_demand'):
-                                    try:
-                                        chart=fetch_ftn_charting(int(chosen_year))
-                                        try: pbp=fetch_pbp_defense_keys(int(chosen_year))
-                                        except Exception: pbp=None
-                                        ftn,ftn_note=ftn_defense_summary(chart,opponent,schedule,pbp)
-                                        if ftn.empty: st.info(ftn_note)
-                                        else: st.dataframe(ftn,hide_index=True,use_container_width=True)
-                                    except Exception as exc: st.info(f'FTN unavailable: {exc}')
-                            st.markdown('[Published team coverage tendencies · Sharp Football Analysis](https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-schemes/)')
-                            st.caption('No inferred coverage percentages or player scheme advantage.')
                     with rail:
                         st.markdown(f'<div class="compact-section">DEFENSE <span>{("vs "+opponent) if opponent else "No matchup"}</span></div>',unsafe_allow_html=True)
                         if opponent and pos in ('QB','RB','WR','TE') and {'season','week','opponent','roster_position'}.issubset(logs):
@@ -982,9 +1005,24 @@ if nav_page == '👤 Player Research':
                                 for row in defense_rows:
                                     color='#f87171' if row['_rank']<=max(1,row['_count']//3) else '#4ade80' if row['_rank']>=max(1,2*row['_count']//3) else '#e4c56e'
                                     st.markdown(f'<div class="defense-stat"><span>{row["Stat"]}</span><strong>{row["Allowed"]}</strong><b style="color:{color}">{row["Rank"]}</b></div>',unsafe_allow_html=True)
-                                st.caption('Rank #1 = fewest allowed. Totals depend on roster matching; may undercount.')
+
                             else: st.caption('No matching defense totals.')
                         else: st.caption('Select an opponent to view defensive allowances.')
+                        st.markdown('<div class="profile-rail-title">DEFENSIVE SCHEME</div>',unsafe_allow_html=True)
+                        with st.popover('Inspect coverage / blitz charting', use_container_width=True):
+                            st.caption('Source: free FTN charting; team-level data only. Unrecognized fields are not interpreted.')
+                            if opponent and chosen_year is not None:
+                                if st.button('Load scheme statistics',key='load_ftn_on_demand'):
+                                    try:
+                                        chart=fetch_ftn_charting(int(chosen_year))
+                                        try: pbp=fetch_pbp_defense_keys(int(chosen_year))
+                                        except Exception: pbp=None
+                                        ftn,ftn_note=ftn_defense_summary(chart,opponent,schedule,pbp)
+                                        if ftn.empty: st.info('No verified scheme rates could be extracted for this matchup.')
+                                        else: st.dataframe(ftn,hide_index=True,use_container_width=True)
+                                    except Exception as exc: st.info('Scheme feed unavailable. Try again later.')
+                            st.link_button('Published team coverage rates', 'https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-schemes/', use_container_width=True)
+                        st.markdown('<div class="profile-note">Coverage splits require verified charting; no fabricated player-versus-scheme advantage.</div>',unsafe_allow_html=True)
                         st.markdown('<div class="compact-section">INJURY REPORT <span>Defensive personnel</span></div>',unsafe_allow_html=True)
                         if opponent:
                             report,note=injury_team_view(injury_reports,opponent,current_season,filter_week)
@@ -997,15 +1035,9 @@ if nav_page == '👤 Player Research':
                                             report[col]=text_col.map(lambda x:'DNP' if re.search(r'(?i)did not practice|not participating|non.participant|^dnp$',x) else 'LP' if re.search(r'(?i)limited|^lp$',x) else 'FP' if re.search(r'(?i)full participation|full practice|^fp$',x) else x)
                                 keep=[c for c in ['Player','Position','Practice','Game status'] if c in report]
                                 st.dataframe(report[keep].head(8),hide_index=True,use_container_width=True,height=min(315,38+35*min(len(report),8)))
-                                st.caption('DNP = did not practice · LP = limited · FP = full. Verify final inactives.')
+
                             else: st.caption(note)
                         else: st.caption('No confirmed opponent.')
-                        with st.expander('More matchup context',expanded=False):
-                            st.caption('Practice status is not a confirmed game inactive. No automatic injury adjustment is applied.')
-                            st.caption('Man/zone player efficiency is unavailable in the connected free sources.')
-                    # Research limitations live in one collapsed panel, not repeated across the page.
-                    with st.expander('Data notes & methodology',expanded=False):
-                        st.caption('Underdog offers are a partial cached API sample, not the full live board. Historical hit rates are not calibrated predictions. Position-specific defensive totals may undercount because of roster matching. FTN coverage fields are not assumed when absent.')
 if nav_page == '📈 Trends':
     st.header('Momentum Tracker')
     st.write('Momentum is measured as the last-five-game average minus the available historical average. It is descriptive, not proof that a trend will continue.')

@@ -180,6 +180,62 @@ def fetch_injury_reports(season):
     return df
 
 
+@st.cache_data(ttl=86400, show_spinner="Loading free FTN play charting...")
+def fetch_ftn_charting(season):
+    import nflreadpy as nfl
+    loader = getattr(nfl, "load_ftn_charting", None)
+    if loader is None:
+        raise RuntimeError("Installed nflreadpy does not expose load_ftn_charting")
+    raw = loader(seasons=[int(season)])
+    data = raw.to_pandas() if hasattr(raw, "to_pandas") else pd.DataFrame(raw)
+    return data
+
+
+def ftn_defense_summary(data, team, schedule_data=None):
+    """Only compute explicitly identified charting fields; no guessed coverage labels."""
+    if data is None or data.empty or not team:
+        return pd.DataFrame(), "No FTN charting rows available."
+    df = data.copy()
+    team_field = next((x for x in ("defteam", "defense_team", "defensive_team", "def_team") if x in df), None)
+    if team_field is None and schedule_data is not None and not schedule_data.empty:
+        game_field = next((x for x in ("nflverse_game_id", "game_id") if x in df), None)
+        schedule_game = next((x for x in ("game_id", "nflverse_game_id") if x in schedule_data), None)
+        offense_field = next((x for x in ("posteam", "offense_team", "offensive_team") if x in df), None)
+        if game_field and schedule_game and offense_field and {"home_team", "away_team"}.issubset(schedule_data.columns):
+            teams = schedule_data[[schedule_game, "home_team", "away_team"]].drop_duplicates(schedule_game)
+            df = df.merge(teams, left_on=game_field, right_on=schedule_game, how="left", suffixes=("", "_schedule"))
+            df["_resolved_defense"] = np.where(df[offense_field].eq(df["home_team"]), df["away_team"],
+                np.where(df[offense_field].eq(df["away_team"]), df["home_team"], None))
+            team_field = "_resolved_defense"
+    if team_field is None:
+        return pd.DataFrame(), "Charting data has no identifiable defense-team field; cannot safely attribute plays."
+    df = df[df[team_field].astype(str).str.upper().eq(str(team).upper())].copy()
+    if df.empty:
+        return pd.DataFrame(), "No charted plays matched this defense."
+    # Only explicit boolean flags. Generic 'pressure' text, front numbers and coverage codes
+    # are not interpreted without a documented schema.
+    known_flags = {
+        "Blitz": ("is_blitz", "blitz"),
+        "Pressure": ("is_pressure", "pressure"),
+        "Man coverage": ("is_man_coverage",),
+        "Zone coverage": ("is_zone_coverage",),
+    }
+    metrics=[]
+    for label, candidates in known_flags.items():
+        field = next((c for c in candidates if c in df), None)
+        if field is None:
+            continue
+        raw = df[field]
+        normalized = raw.astype(str).str.strip().str.lower().map({"true":1,"false":0,"1":1,"0":0,"yes":1,"no":0})
+        valid = normalized.dropna()
+        if len(valid) < 10:
+            continue
+        metrics.append({"Charted tendency":label, "Rate":f"{valid.mean():.1%}", "Charted plays":len(valid), "Source field":field})
+    if not metrics:
+        return pd.DataFrame(), f"{len(df):,} charted plays found, but no validated binary scheme flags were recognized."
+    return pd.DataFrame(metrics), f"{len(df):,} matching charting records. Percentages use nonmissing flags only."
+
+
 def injury_team_view(injuries, team, season, week=None):
     if injuries is None or injuries.empty or not team:
         return pd.DataFrame(), "No injury reports returned for this season."
@@ -871,6 +927,22 @@ with tabs[3]:
                     st.caption(f'Injury data unavailable: {injury_error}')
                 st.divider()
                 st.subheader('Scheme scouting · Man, zone and fronts')
+                st.caption('Free FTN charting (when available) is loaded once per day. Rates below are descriptive, not player-specific scheme advantages.')
+                scheme_defense = d_team if 'd_team' in locals() else upcoming_opponent
+                scheme_season = int(d_season) if 'd_season' in locals() else int(current_season)
+                if scheme_defense:
+                    try:
+                        ftn_data = fetch_ftn_charting(scheme_season)
+                        ftn_summary, ftn_note = ftn_defense_summary(ftn_data, scheme_defense, schedule)
+                        if ftn_summary.empty:
+                            st.info('FTN charting: ' + ftn_note)
+                        else:
+                            st.dataframe(ftn_summary, hide_index=True, use_container_width=True)
+                            st.caption('FTN charting · ' + ftn_note + ' Availability and definitions depend on the upstream dataset.')
+                    except Exception as exc:
+                        st.info('FTN charting unavailable for this season: ' + str(exc))
+                else:
+                    st.info('Select an opposing defense to view available charting tendencies.')
                 st.markdown('**Verified free reference:** [Sharp Football Analysis — defensive coverage tendencies](https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-schemes/). Includes published team man/zone rates and safety-shell tendencies. Open the source to inspect the selected defense.')
                 st.caption('Coverage describes man/zone assignments; a 4–3 front describes defensive personnel alignment. These are distinct. The existing nflverse weekly game logs do not provide reliable player-versus-coverage splits.')
                 st.info('Player-versus-man, player-versus-zone, Cover 1/3, and 4–3 efficiency: data unavailable in the connected free feeds. No scheme advantage is scored or assumed.')

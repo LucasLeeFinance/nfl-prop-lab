@@ -7,9 +7,40 @@ import plotly.express as px
 import streamlit as st
 
 st.set_page_config(page_title='NFL Prop Lab | Underdog Research', page_icon='🏈', layout='wide')
-st.markdown('''<style>.block-container{padding-top:1.3rem;max-width:1450px}h1,h2,h3{letter-spacing:-.025em}div[data-testid="stMetric"]{border:1px solid #374151;border-radius:12px;padding:15px}div[data-testid="stTabs"] button{font-weight:600}div[data-testid="stImage"] img{border-radius:16px;background:#18212d} </style>''', unsafe_allow_html=True)
-st.title('🏈 NFL Prop Lab')
-st.caption('Underdog Higher / Lower research • historical performance • momentum • matchup context')
+st.markdown("""<style>
+/* NFL Prop Lab — dark research workstation */
+:root {color-scheme:dark}
+.stApp {background:radial-gradient(ellipse 70% 35% at 60% -12%,rgba(45,105,103,.17),transparent),#090e17;color:#eaf0f7}
+.block-container {max-width:1530px;padding-top:1.05rem;padding-bottom:4rem}
+section[data-testid="stSidebar"] {background:#101827;border-right:1px solid #26344b}
+section[data-testid="stSidebar"] .block-container {padding-top:1rem}
+h1,h2,h3 {letter-spacing:-.045em!important;color:#f4f8fc}
+h1 {font-size:2rem!important}h2 {font-size:1.45rem!important}h3 {font-size:1.14rem!important}
+p, .stCaption {color:#b5c2d5}
+[data-testid="stMetric"] {background:linear-gradient(145deg,#152238,#101a2b);border:1px solid #2a3a53;border-radius:16px;padding:18px 20px;box-shadow:0 9px 28px rgba(0,0,0,.13)}
+[data-testid="stMetricLabel"] {color:#9fb0c8}
+[data-testid="stMetricValue"] {color:#f7fafc;font-weight:750;letter-spacing:-.05em}
+[data-testid="stTabs"] [data-baseweb="tab-list"] {gap:5px;border-bottom:1px solid #2a394f;overflow-x:auto}
+[data-testid="stTabs"] button {background:#121c2b;border:1px solid #26364d;border-radius:10px 10px 0 0;color:#b6c5d9;font-weight:650;padding:11px 14px}
+[data-testid="stTabs"] button[aria-selected="true"] {background:#193b3d;color:#9ef5db;border-color:#317d73}
+[data-testid="stTabs"] [data-baseweb="tab-highlight"] {background:#58d7b8}
+[data-testid="stDataFrame"] {border:1px solid #26374d;border-radius:12px;overflow:hidden}
+[data-testid="stImage"] img {border-radius:16px;background:#1a2637}
+[data-testid="stExpander"] {background:#111c2b;border:1px solid #2a3b50;border-radius:12px}
+.stButton button, .stDownloadButton button {border-radius:10px;font-weight:650;border:1px solid #3d796f}
+[data-baseweb="select"]>div,[data-baseweb="input"]>div {border-radius:10px;background:#152235}
+hr {border-color:#26364b!important}
+.nfl-brand {display:flex;align-items:center;gap:13px;margin-bottom:4px}
+.nfl-mark {width:46px;height:46px;border-radius:13px;background:linear-gradient(145deg,#1d8e7a,#123d5b);display:flex;align-items:center;justify-content:center;font-size:26px;box-shadow:0 7px 24px #061414}
+.nfl-name {font-weight:850;font-size:27px;letter-spacing:-1.3px;color:#f3f8ff;line-height:1.1}
+.nfl-sub {font-size:12px;letter-spacing:1.1px;text-transform:uppercase;color:#72d8bd;font-weight:700}
+.nfl-pill {display:inline-block;background:#14392f;border:1px solid #276f58;color:#8be8c4;padding:5px 10px;border-radius:999px;font-size:12px;font-weight:650;margin:0 6px 10px 0}
+.nfl-muted-pill {background:#18253a;border-color:#31445d;color:#afc3df}
+.profile-shell {padding:18px 22px;border-radius:18px;background:linear-gradient(120deg,#15283b,#101a2a);border:1px solid #2c4960;margin:8px 0 17px}
+.profile-eyebrow {text-transform:uppercase;color:#6dd7c0;font-weight:750;letter-spacing:1.2px;font-size:11px}
+</style>""", unsafe_allow_html=True)
+st.markdown('<div class="nfl-brand"><div class="nfl-mark">🏈</div><div><div class="nfl-name">NFL PROP LAB</div><div class="nfl-sub">Player prop research workstation</div></div></div>', unsafe_allow_html=True)
+st.markdown('<span class="nfl-pill">UNDERDOG HIGHER / LOWER</span><span class="nfl-pill nfl-muted-pill">OFFENSE + KICKERS</span><span class="nfl-pill nfl-muted-pill">HISTORICAL MATCHUP RESEARCH</span>', unsafe_allow_html=True)
 
 MARKETS = {'passing_yards':'Passing yards','passing_tds':'Passing TDs','pass_attempts':'Pass attempts','completions':'Pass completions','interceptions':'Interceptions','rushing_yards':'Rushing yards','carries':'Rushing attempts','rushing_tds':'Rushing TDs','receiving_yards':'Receiving yards','receptions':'Receptions','targets':'Targets','receiving_tds':'Receiving TDs','rush_rec_yards':'Rush + receiving yards','rush_rec_tds':'Rush + receiving TDs','longest_reception':'Longest reception','longest_rush':'Longest rush','field_goals':'Field goals','extra_points':'Extra points'}
 # Normalize provider labels without assuming every offered market has nflverse data.
@@ -440,7 +471,7 @@ if logs is not None and slate_lines is not None and not slate_lines.empty:
     supported = slate_lines['market'].isin(logs.columns)
     matched = slate_lines['player'].map(normalized_player).isin(hist_names)
     full_period = slate_lines['period'].astype(str).str.lower().isin(['full game', 'full_game', 'game', 'unknown']) if 'period' in slate_lines else pd.Series(True, index=slate_lines.index)
-    with st.expander('Why some Underdog lines are not ranked', expanded=results.empty):
+    with st.expander('Data coverage & model diagnostics', expanded=False):
         st.write(f"Observed offers on selected board: **{len(slate_lines)}**")
         st.write(f"Markets supported by historical stats: **{int(supported.sum())}**")
         st.write(f"Player names matched to history: **{int(matched.sum())}**")
@@ -533,6 +564,7 @@ with tabs[2]:
 
 with tabs[3]:
     st.header('Player Research')
+    st.caption('One player. One market. Performance, opponent context, and observed lines in one workspace.')
     st.caption('Player-first research: performance, usage, Underdog lines, and opponent defense in one view.')
     if logs is None:
         st.info('Load automatic NFL statistics or upload a player game-log CSV to start.')
@@ -568,7 +600,7 @@ with tabs[3]:
             else:
                 st.caption('No portrait available')
         with right:
-            st.markdown(f'## {player}')
+            st.markdown(f'<div class="profile-eyebrow">PLAYER PROFILE</div><div style="font-size:30px;font-weight:800;letter-spacing:-1.2px;color:#f3f8ff">{player}</div>', unsafe_allow_html=True)
             st.caption(' · '.join(x for x in (position if position not in ('nan','None') else '', team_name) if x))
             st.caption('NFL roster headshot when available · No guessed player photos')
         st.divider()
@@ -626,7 +658,12 @@ with tabs[3]:
                     })
                 if usage_rows:
                     usage_frame = pd.DataFrame(usage_rows)
-                    st.dataframe(usage_frame, hide_index=True, use_container_width=True)
+                    usage_frame['Change vs previous'] = usage_frame.apply(
+                        lambda r: (r['Last 5 avg'] - r['Previous 5 avg']) if pd.notna(r['Previous 5 avg']) else float('nan'), axis=1)
+                    def opportunity_color(v):
+                        if pd.isna(v): return ''
+                        return 'color: #4ade80; font-weight: 700' if v > 0 else 'color: #f87171; font-weight: 700' if v < 0 else 'color: #cbd5e1'
+                    st.dataframe(usage_frame.style.map(opportunity_color, subset=['Change vs previous']), hide_index=True, use_container_width=True)
                     st.caption('Opportunity counts help explain changes in production. These are historical observations, not snap share, route participation, injury updates, or predictive probabilities. Previous 5 requires at least three observations.')
                 else:
                     st.caption('No supported opportunity statistics are available for this player in the selected history.')
@@ -704,16 +741,43 @@ with tabs[3]:
                                                      'League avg':round(league_mean,1),
                                                      'Vs league':f'{(allowed/league_mean-1)*100:+.1f}%' if league_mean>0 else 'N/A',
                                                      'Games':len(selected_def)})
+                                    # Rank defensive strength from fewest allowed (1) to most allowed.
+                                    # Only rank teams with at least one observed game; show coverage.
+                                    team_avgs = weekly.groupby('opponent')[metric_key].mean()
+                                    rank = int(team_avgs.rank(method='min', ascending=True).loc[d_team])
+                                    count_teams = int(team_avgs.size)
+                                    def_rows[-1]['Defense rank'] = rank
+                                    def_rows[-1]['Teams ranked'] = count_teams
                                     weekly_chart_data[metric_key] = selected_def
                                 if def_rows:
                                     st.markdown(f'**{d_team} vs {player_position}s — production allowed**')
-                                    st.dataframe(pd.DataFrame(def_rows), hide_index=True, use_container_width=True)
+                                    rank_frame = pd.DataFrame(def_rows)
+                                    rank_frame['Defense rank'] = rank_frame.apply(
+                                        lambda r: f"#{int(r['Defense rank'])} / {int(r['Teams ranked'])}", axis=1)
+                                    rank_frame = rank_frame.drop(columns=['Teams ranked'])
+                                    rank_frame = rank_frame[['Stat', 'Defense rank', 'Allowed / game', 'Last 5 games', 'League avg', 'Vs league', 'Games']]
+
+                                    def rank_style(row):
+                                        # Red = harder for the offensive player; green = more allowed.
+                                        rank_num = int(row['Defense rank'].split(' / ')[0][1:])
+                                        total = int(row['Defense rank'].split(' / ')[1])
+                                        percentile = (rank_num - 1) / max(total - 1, 1)
+                                        color = '#f87171' if percentile < .25 else '#fb923c' if percentile < .375 else '#facc15' if percentile > .625 and percentile < .75 else '#4ade80' if percentile >= .75 else '#cbd5e1'
+                                        return [f'color: {color}; font-weight: 700' if col == 'Defense rank' else '' for col in row.index]
+
+                                    st.dataframe(rank_frame.style.apply(rank_style, axis=1), hide_index=True, use_container_width=True)
+                                    st.caption('Rank #1 = fewest allowed (red / difficult for offense); bottom-quarter defenses = green / more allowed. Ranks compare available teams for the selected season, not necessarily all 32. Missing position matches can distort ranks.')
                                     chart_metric = st.selectbox('Defensive game-by-game chart', list(weekly_chart_data),
                                                                 format_func=lambda m:MARKETS.get(m,m), key='profile_def_chart')
                                     chart_data = weekly_chart_data[chart_metric]
-                                    st.plotly_chart(px.bar(chart_data, x='week', y=chart_metric,
-                                        title=f'{d_team}: {MARKETS.get(chart_metric, chart_metric)} allowed to {player_position}s',
-                                        labels={'week':'Week',chart_metric:'Total allowed'}), use_container_width=True)
+                                    def_fig = px.bar(chart_data, x='week', y=chart_metric,
+                                        title=f'{d_team} · {MARKETS.get(chart_metric, chart_metric)} allowed to {player_position}s',
+                                        labels={'week':'Week',chart_metric:'Total allowed'})
+                                    def_fig.update_traces(marker_color='#58b9af')
+                                    def_fig.update_layout(template='plotly_dark', paper_bgcolor='#101a2a', plot_bgcolor='#101a2a',
+                                        font=dict(color='#dce8f5'), margin=dict(l=15,r=15,t=55,b=20),
+                                        xaxis=dict(showgrid=False), yaxis=dict(gridcolor='#26364b'))
+                                    st.plotly_chart(def_fig, use_container_width=True)
                                     st.caption('These are combined game totals for ALL opposing players at this position, not an individual-player projection. Historical position labels come from roster matching; incomplete matches can undercount totals. No coverage, blitz or pressure measurements are implied. No automatic betting edge is inferred.')
                                 else:
                                     st.info('No verified position-specific production found for this defense and season.')
@@ -745,10 +809,24 @@ with tabs[3]:
                     st.caption('Line comparison hidden until an observed line is available or you enable a hypothetical comparison.')
                 plot = view.copy()
                 plot['Game'] = (plot['season'].astype('Int64').astype(str) + ' W' + plot['week'].astype('Int64').astype(str)) if {'season','week'}.issubset(plot.columns) else plot['game_date'].dt.strftime('%Y-%m-%d')
-                fig = px.bar(plot, x='Game', y=market, hover_data=['opponent'], title=f'{player} — {MARKETS[market]} by game')
+                # Each game's bar is colored relative to the selected line, not by an invented betting edge.
+                plot['Result'] = ('No line' if line is None else 'Lower')
                 if line is not None:
-                    fig.add_hline(y=line, line_dash='dash', annotation_text='Observed line' if not matching_lines.empty else 'Hypothetical line')
+                    plot['Result'] = np.select([plot[market] > line, plot[market] < line], ['Higher', 'Lower'], default='Push')
+                palette = {'Higher':'#42d4a3', 'Lower':'#f17c83', 'Push':'#f4c16a', 'No line':'#5a91d7'}
+                fig = px.bar(plot, x='Game', y=market, color='Result',
+                    color_discrete_map=palette, hover_data=['opponent'],
+                    title=f'{player} · {MARKETS[market]} · game log')
+                if line is not None:
+                    fig.add_hline(y=line, line_dash='dash', line_color='#e9eff8',
+                        annotation_text='Observed Underdog line' if not matching_lines.empty else 'Hypothetical line')
+                fig.update_layout(template='plotly_dark', paper_bgcolor='#101a2a', plot_bgcolor='#101a2a',
+                    font=dict(color='#dce8f5'), margin=dict(l=15,r=15,t=55,b=20),
+                    legend_title_text='', bargap=.23, xaxis=dict(showgrid=False),
+                    yaxis=dict(gridcolor='#26364b'), hovermode='x unified')
                 st.plotly_chart(fig, use_container_width=True)
+                if line is not None:
+                    st.caption('Green = above comparison line; red = below; amber = exactly equal. Colors describe past results, not future probabilities.')
                 cols = [c for c in ['season','week','game_date','team','opponent',market,'targets','carries','pass_attempts'] if c in view.columns]
                 cols = list(dict.fromkeys(cols))
                 st.dataframe(view[cols].iloc[::-1], hide_index=True, use_container_width=True)
@@ -757,7 +835,10 @@ with tabs[3]:
                     st.subheader('Momentum snapshot')
                     recent = pd.to_numeric(full[market],errors='coerce').dropna().tail(5)
                     baseline = pd.to_numeric(full[market],errors='coerce').dropna()
-                    st.write(f'Last 5 average: **{recent.mean():.1f}** | Selected-history average: **{baseline.mean():.1f}** | Difference: **{recent.mean()-baseline.mean():+.1f}**')
+                    delta = float(recent.mean() - baseline.mean())
+                    st.write(f'Last 5 average: **{recent.mean():.1f}** | Selected-history average: **{baseline.mean():.1f}**')
+                    momentum_color = '#4ade80' if delta > 0 else '#f87171' if delta < 0 else '#cbd5e1'
+                    st.markdown(f"Difference: <span style='color:{momentum_color};font-weight:700'>{delta:+.1f}</span>", unsafe_allow_html=True)
                     st.caption('Recent performance can reflect opportunity, matchups, or random variation. This is not an independently validated prediction adjustment.')
 with tabs[4]:
     st.header('Momentum Tracker')

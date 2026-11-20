@@ -96,6 +96,34 @@ section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {gap:.35rem!imp
 st.markdown('<div class="nfl-brand"><div class="nfl-mark">🏈</div><div><div class="nfl-name">NFL PROP LAB</div><div class="nfl-sub">Player prop research workstation</div></div></div>', unsafe_allow_html=True)
 st.markdown('<span class="nfl-pill">UNDERDOG HIGHER / LOWER</span><span class="nfl-pill nfl-muted-pill">OFFENSE + KICKERS</span><span class="nfl-pill nfl-muted-pill">HISTORICAL MATCHUP RESEARCH</span>', unsafe_allow_html=True)
 
+st.markdown("""<style>
+/* V21 compact, fixed-height workstation */
+.block-container{padding-top:2.7rem!important;padding-bottom:1.2rem!important;max-width:1800px!important}
+header[data-testid="stHeader"]{background:#0b0d10!important;height:2.4rem!important}
+[data-testid="stAppViewContainer"]{background:#080b10!important}
+section[data-testid="stSidebar"]{min-width:225px!important;max-width:250px!important}
+section[data-testid="stSidebar"] [data-testid="stVerticalBlock"]{gap:.35rem!important}
+[data-testid="stVerticalBlock"]{gap:.45rem!important}
+[data-testid="stHorizontalBlock"]{gap:.6rem!important}
+[data-testid="stWidgetLabel"] p{font-size:10px!important;letter-spacing:.07em;color:#91a2b5!important;text-transform:uppercase}
+[data-testid="stSelectbox"]{margin-bottom:0!important}
+[data-testid="stMetric"]{padding:8px!important}
+[data-testid="stExpander"]{border-color:#232a35!important}
+[data-testid="stPlotlyChart"]{margin:0!important}
+.profile-title{font-size:23px;line-height:1.15;font-weight:850;color:#f4f7fa;letter-spacing:-.5px}
+.profile-title span{font-size:12px;font-weight:600;color:#68d4bd;letter-spacing:0;margin-left:10px}
+.profile-sub{font-size:11px;color:#8c9eaf;margin-top:4px}
+.mini-score{border:1px solid #242d38;background:#111820;border-radius:9px;padding:8px 10px;min-height:58px}
+.mini-score small{display:block;color:#92a3b4;font-size:10px;margin-bottom:3px}
+.mini-score strong{display:block;color:#f5f8fc;font-size:21px;line-height:1.1}
+.compact-section{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #26303b;margin:9px 0 5px;padding-bottom:5px;font-weight:800;font-size:12px;color:#f1f6f9;letter-spacing:.05em}
+.compact-section span{font-size:10px;letter-spacing:0;font-weight:500;color:#92a5b4}
+.defense-stat{display:grid;grid-template-columns:1fr 55px 63px;align-items:center;gap:6px;border-bottom:1px solid #242b33;padding:7px 4px;font-size:11px;color:#b8c4d0}
+.defense-stat strong{font-size:14px;text-align:right;color:#f4f8fc}
+.defense-stat b{text-align:right;font-size:11px}
+[data-testid="stCaptionContainer"] p{font-size:10px!important;line-height:1.3!important}
+</style>""", unsafe_allow_html=True)
+
 MARKETS = {'passing_yards':'Passing yards','passing_tds':'Passing TDs','pass_attempts':'Pass attempts','completions':'Pass completions','interceptions':'Interceptions','rushing_yards':'Rushing yards','carries':'Rushing attempts','rushing_tds':'Rushing TDs','receiving_yards':'Receiving yards','receptions':'Receptions','targets':'Targets','receiving_tds':'Receiving TDs','rush_rec_yards':'Rush + receiving yards','rush_rec_tds':'Rush + receiving TDs','longest_reception':'Longest reception','longest_rush':'Longest rush','field_goals':'Field goals','extra_points':'Extra points'}
 # Normalize provider labels without assuming every offered market has nflverse data.
 MARKET_ALIASES = {
@@ -790,416 +818,194 @@ if nav_page == '🏟️ Games':
             st.dataframe(slate_lines[cols], hide_index=True, use_container_width=True)
 
 if nav_page == '👤 Player Research':
-    st.markdown('<div class="hero-title">Player Research</div>', unsafe_allow_html=True)
-    if logs is None:
-        st.info('Load automatic NFL statistics or upload a player game-log CSV to start.')
+    if logs is None or logs.empty:
+        st.info('Load NFL statistics from Data & Model to begin player research.')
     else:
-        with st.popover('Player filters'):
-            show_historical = st.checkbox('Include historical / non-current players', value=False, key='include_historical_players')
-        player_pool = logs if show_historical else logs[logs["_current_roster"]].copy()
-        if not show_historical and current_roster is None:
-            st.caption("Current roster unavailable: using players who appeared in the latest selected season as a fallback, not verified active status.")
-        players = sorted(player_pool['player'].astype(str).unique())
-        if selected_teams is not None and 'team' in logs:
-            matchup_players = sorted(player_pool.loc[player_pool['team'].astype(str).isin(selected_teams), 'player'].astype(str).unique())
-            if matchup_players:
-                players = matchup_players
-        if not players:
-            st.warning('No players match the current roster and game filters. Enable historical players or select All games.')
-            st.stop()
-        requested_player = st.session_state.pop('requested_player', None)
-        if requested_player in players:
-            st.session_state['research_player'] = requested_player
-        elif 'research_player' in st.session_state and st.session_state['research_player'] not in players:
-            del st.session_state['research_player']
-        player = st.selectbox('Player', players, key='research_player')
-        # Profile identity: portraits come only from roster source data, not guessed URLs.
-        profile_rows = player_pool.loc[player_pool['player'].astype(str).eq(player)]
-        latest_profile = profile_rows.sort_values('game_date').iloc[-1] if not profile_rows.empty else None
-        position = str(latest_profile.get('roster_position', '') or '') if latest_profile is not None else ''
-        team_name = str(latest_profile.get('team', '') or '') if latest_profile is not None else ''
-        if not team_name or team_name.lower() in ('nan', 'none'):
-            team_name = str(latest_profile.get('team', 'Unknown')) if latest_profile is not None else 'Unknown'
-        portrait = latest_profile.get('roster_headshot') if latest_profile is not None else None
-        left, right = st.columns([1, 6], vertical_alignment='center')
-        with left:
-            if isinstance(portrait, str) and portrait.startswith('https://'):
-                try:
-                    st.image(portrait, width=74)
-                except Exception:
-                    st.caption('No portrait available')
-            else:
-                st.caption('No portrait available')
-        with right:
-            st.markdown(f'<div class="profile-eyebrow">PLAYER PROFILE</div><div style="font-size:30px;font-weight:800;letter-spacing:-1.2px;color:#f3f8ff">{player}</div>', unsafe_allow_html=True)
-            st.caption(' · '.join(x for x in (position if position not in ('nan','None') else '', team_name) if x))
-            
-        # A zero-valued passing_yards column exists for WRs in the raw feed; it is not a valid WR market.
-        POSITION_MARKETS = {
-            'QB': {'passing_yards','passing_tds','pass_attempts','completions','interceptions','rushing_yards','carries','rushing_tds','rush_rec_yards','rush_rec_tds'},
-            'RB': {'rushing_yards','carries','rushing_tds','receiving_yards','receptions','targets','receiving_tds','rush_rec_yards','rush_rec_tds'},
-            'FB': {'rushing_yards','carries','rushing_tds','receiving_yards','receptions','targets','receiving_tds','rush_rec_yards','rush_rec_tds'},
-            'WR': {'receiving_yards','receptions','targets','receiving_tds','rushing_yards','carries','rushing_tds','rush_rec_yards','rush_rec_tds'},
-            'TE': {'receiving_yards','receptions','targets','receiving_tds'},
-            'K': {'field_goals','extra_points'}, 'PK': {'field_goals','extra_points'},
+        # The profile is a compact workspace: controls, scorecard, chart, defense rail.
+        position_markets = {
+            'QB': ['passing_yards','passing_tds','pass_attempts','completions','interceptions','rushing_yards','carries','rushing_tds'],
+            'RB': ['rushing_yards','carries','rushing_tds','receiving_yards','receptions','targets','receiving_tds','rush_rec_yards','rush_rec_tds'],
+            'FB': ['rushing_yards','carries','receiving_yards','receptions','targets','rush_rec_yards'],
+            'WR': ['receiving_yards','receptions','targets','receiving_tds','rushing_yards','carries','rush_rec_yards'],
+            'TE': ['receiving_yards','receptions','targets','receiving_tds'],
+            'K': ['field_goals','extra_points'], 'PK': ['field_goals','extra_points'],
         }
-        position = position.upper().strip()
-        valid_markets = POSITION_MARKETS.get(position, set(MARKETS))
-        available = [m for m in MARKETS if m in valid_markets and m in logs and logs.loc[logs.player.astype(str).eq(player), m].notna().any()]
-        if not available:
-            st.warning('No supported market columns found for this player.')
+        with st.sidebar.expander('Player pool', expanded=False):
+            show_historical = st.checkbox('Include non-current players', value=False, key='include_historical_players')
+        player_pool = logs if show_historical else logs.loc[logs['_current_roster'].fillna(False)].copy()
+        players = sorted(player_pool['player'].dropna().astype(str).unique().tolist())
+        if selected_teams and 'team' in player_pool:
+            matched = sorted(player_pool.loc[player_pool['team'].astype(str).isin(selected_teams),'player'].dropna().astype(str).unique())
+            if matched: players = matched
+        if not players:
+            st.warning('No matching players. Change the game filter or enable historical players in the sidebar.')
         else:
-            market_col, window_col = st.columns([2.4, 1])
-            market = market_col.selectbox('Stat market', available, format_func=lambda x: MARKETS[x], key=f'market_{normalized_player(player)}')
-            full = logs[logs.player.astype(str).eq(player)].dropna(subset=[market]).copy()
-            full = full.sort_values(['season','week','game_date'] if {'season','week'}.issubset(full.columns) else ['game_date'])
-            if 'season' in full and full['season'].notna().any():
-                seasons = sorted(full['season'].dropna().astype(int).unique(), reverse=True)
-                chosen_seasons = st.multiselect('Seasons to display', seasons, default=seasons, key='research_seasons')
-                full = full[full['season'].isin(chosen_seasons)]
-            window = window_col.selectbox('Games to display', ['All games','Last 3','Last 5','Last 10','Last 17'], index=2)
-            with st.expander('Advanced game filters', expanded=False):
-                opponent_choices = ['All opponents'] + sorted(full['opponent'].dropna().astype(str).unique().tolist())
-                opponent_choice = st.selectbox('Historical opponent filter', opponent_choices)
-            if opponent_choice != 'All opponents':
-                full = full[full['opponent'].astype(str).eq(opponent_choice)]
-            window_n = {'All games':None,'Last 3':3,'Last 5':5,'Last 10':10,'Last 17':17}[window]
-            view = full.tail(window_n) if window_n else full
-            if view.empty:
-                st.warning('No games match these filters.')
+            requested = st.session_state.pop('requested_player', None)
+            if requested in players: st.session_state['research_player'] = requested
+            if st.session_state.get('research_player') not in players: st.session_state.pop('research_player', None)
+            top_player, top_market, top_season, top_window = st.columns([2.3,2.0,1.05,1.05], gap='small')
+            player = top_player.selectbox('PLAYER', players, key='research_player')
+            profile = player_pool[player_pool['player'].astype(str).eq(player)].sort_values('game_date')
+            latest = profile.iloc[-1]
+            pos = str(latest.get('roster_position','')).upper().strip()
+            if pos in ('NAN','NONE'): pos = ''
+            roster_team = str(latest.get('roster_team','')).upper().strip()
+            team = roster_team if roster_team not in ('','NAN','NONE') else str(latest.get('team','')).upper().strip()
+            portrait = latest.get('roster_headshot')
+            permitted = position_markets.get(pos, list(MARKETS))
+            available = [m for m in permitted if m in logs and pd.to_numeric(profile[m],errors='coerce').notna().any()]
+            if not available:
+                st.info('No supported statistics for this player.')
             else:
-                vals = pd.to_numeric(view[market], errors='coerce').dropna()
-                a,b,c,d = st.columns(4)
-                a.metric('Displayed average', f'{vals.mean():.1f}')
-                b.metric('Last 5 average', f'{vals.tail(5).mean():.1f}')
-                c.metric('Games displayed', len(vals))
-                d.metric('Std. deviation', f'{vals.std():.1f}' if len(vals)>1 else 'N/A')
-                research_main, research_side = st.columns([2.25, 1], gap='medium')
-                with research_main:
-                    st.markdown('#### Game results · Higher / Lower')
-                    matching_lines = lines[(lines["_player_key"].eq(normalized_player(player))) & (lines["market"].eq(market))] if lines is not None and "_player_key" in lines else pd.DataFrame()
-                    if not matching_lines.empty:
-                        chosen_line = st.selectbox("Observed Underdog line", sorted(matching_lines["line"].dropna().astype(float).unique().tolist()), key=f"observed_{normalized_player(player)}_{market}")
-                        st.caption("Line selected from the retrieved API board. Check its observation time before use.")
-                        line = float(chosen_line)
-                    else:
-                        st.caption('No observed line on the limited API board. Optionally compare a hypothetical line.')
-                        use_manual = st.checkbox('Compare against a hypothetical line', value=False, key='research_use_manual_line')
-                        line = st.number_input('Hypothetical comparison line', min_value=0.0, value=float(round(vals.mean() * 2) / 2), step=0.5, key=f'research_line_{normalized_player(player)}_{market}') if use_manual else None
-                    if line is not None:
-                        higher = int((vals > line).sum()); lower = int((vals < line).sum()); pushes = int((vals == line).sum())
-                        h,l,p = st.columns(3)
-                        h.metric('Higher in sample', f'{higher}/{len(vals)}')
-                        l.metric('Lower in sample', f'{lower}/{len(vals)}')
-                        p.metric('Exactly on line', pushes)
-                        st.caption('Historical counts only, not predicted probabilities. A hypothetical line is not an actual Underdog offer.')
-                    else:
-                        st.caption('Historical game totals; no comparison line selected.')
-                    plot = view.copy()
-                    plot['Game'] = (plot['season'].astype('Int64').astype(str) + ' W' + plot['week'].astype('Int64').astype(str)) if {'season','week'}.issubset(plot.columns) else plot['game_date'].dt.strftime('%Y-%m-%d')
-                    # Each game's bar is colored relative to the selected line, not by an invented betting edge.
-                    plot['Result'] = ('No line' if line is None else 'Lower')
-                    if line is not None:
-                        plot['Result'] = np.select([plot[market] > line, plot[market] < line], ['Higher', 'Lower'], default='Push')
-                    palette = {'Higher':'#12d69d', 'Lower':'#e33e1a', 'Push':'#f3c36b', 'No line':'#4386b9'}
-                    fig = px.bar(plot, x='Game', y=market, color='Result',
-                        color_discrete_map=palette, hover_data=['opponent'],
-                        title=f'{player} · {MARKETS[market]}')
-                    if line is not None:
-                        fig.add_hline(y=line, line_dash='dash', line_color='#35d4a8',
-                            annotation_text='Observed Underdog line' if not matching_lines.empty else 'Hypothetical line')
-                    fig.update_layout(template='plotly_dark', paper_bgcolor='#0c0d0f', plot_bgcolor='#0c0d0f',
-                        font=dict(color='#dce8f5',size=11), height=355, margin=dict(l=10,r=10,t=48,b=15),
-                        legend_title_text='', bargap=.23, xaxis=dict(showgrid=False),
-                        yaxis=dict(gridcolor='#24272a'), hovermode='x unified')
-                    st.plotly_chart(fig, use_container_width=True)
-                    if line is not None:
-                        st.caption('Green = above comparison line; red = below; amber = exactly equal. Colors describe past results, not future probabilities.')
-                    cols = [c for c in ['season','week','game_date','team','opponent',market,'targets','carries','pass_attempts'] if c in view.columns]
-                    cols = list(dict.fromkeys(cols))
-                    with st.expander('Game-by-game data', expanded=False):
-                            st.dataframe(view[cols].iloc[::-1], hide_index=True, use_container_width=True)
-                    st.download_button('Download filtered game logs', view.to_csv(index=False), f'{re.sub(r"[^a-zA-Z0-9]+", "_", player)}_game_logs.csv', 'text/csv')
-                with research_side:
-                    st.markdown('#### Matchup intelligence')
-                    st.caption('Current-season defensive production allowed. Rankings: #1 = toughest defense.')
-                    possible_pos = str(position).upper()
-                    defense_target = None
-                    if selected_teams and team_name in selected_teams:
-                        defense_target = next(iter(selected_teams - {team_name}), None)
-                    elif schedule is not None and not schedule.empty:
-                        candidate_games = schedule.copy()
-                        candidate_games['kickoff_time'] = pd.to_datetime(candidate_games.get('gameday'), utc=True, errors='coerce')
-                        candidate_games = candidate_games[(candidate_games['kickoff_time'] >= pd.Timestamp.now(tz='UTC').normalize()) & ((candidate_games['home_team'].astype(str) == team_name) | (candidate_games['away_team'].astype(str) == team_name))]
-                        if not candidate_games.empty:
-                            next_row = candidate_games.sort_values('kickoff_time').iloc[0]
-                            defense_target = next_row['away_team'] if next_row['home_team'] == team_name else next_row['home_team']
-                    if defense_target:
-                        st.markdown(f'**vs {defense_target}**')
-                    else:
-                        st.caption('Choose a matchup in the sidebar to see opponent context.')
-                    if defense_target and possible_pos in ('QB','RB','WR','TE') and {'season','week','opponent','roster_position'}.issubset(logs.columns):
-                        def_pool = logs[logs['roster_position'].fillna('').astype(str).str.upper().eq(possible_pos)].copy()
-                        if current_season is not None:
-                            def_pool = def_pool[def_pool['season'].eq(current_season)]
-                        if market in def_pool.columns and not def_pool.empty:
-                            def_pool[market] = pd.to_numeric(def_pool[market], errors='coerce')
-                            per_game = def_pool.dropna(subset=[market]).groupby(['opponent','season','week'], as_index=False)[market].sum()
-                            by_team = per_game.groupby('opponent')[market].agg(['mean','count']).sort_values('mean')
-                            if defense_target in by_team.index:
-                                defense_rank = int(by_team.index.get_loc(defense_target)) + 1
-                                allowed = float(by_team.loc[defense_target, 'mean'])
-                                rank_color = '#f87171' if defense_rank <= 10 else '#4ade80' if defense_rank >= 23 else '#f5c76b'
-                                st.markdown(f'<div style="background:#15191d;border:1px solid #292e33;border-radius:12px;padding:12px;margin:8px 0"><div style="font-size:11px;color:#a0aab5">{MARKETS.get(market,market)} allowed / game</div><div style="font-size:25px;font-weight:800;color:{rank_color}">{allowed:.1f} <span style="font-size:13px;color:#a4adb6">· rank #{defense_rank} / {len(by_team)}</span></div></div>',unsafe_allow_html=True)
-                                st.caption(f'Based on {int(by_team.loc[defense_target,"count"])} charted team games in the weekly player-stat feed; coverage may be incomplete.')
-                            else:
-                                st.caption('No matching defensive allowance records for this market.')
-                        else:
-                            st.caption('No supported defensive allowance records.')
-                    st.markdown('#### Defensive injuries')
-                    if defense_target and injury_reports is not None and not injury_reports.empty:
-                        recent_injuries, injury_note = injury_team_view(injury_reports, defense_target, current_season, filter_week)
-                        if not recent_injuries.empty:
-                            st.dataframe(recent_injuries.head(7), hide_index=True, use_container_width=True, height=240)
-                            st.caption(injury_note)
-                        else:
-                            st.caption(injury_note)
-                    else:
-                        st.caption('No opponent injury report available.')
-                    st.markdown('#### Scheme research')
-                    st.caption('Man/zone and fronts require verified charting. See detailed scheme scouting below; missing data is never inferred.')
-                st.markdown('---')
-                # Usage is a leading indicator of opportunity, not a guaranteed result.
-                st.subheader('Opportunity and usage trends')
-                st.caption('Changes in volume can explain changes in player production.')
-                opportunity_metrics = {
-                    'targets': 'Targets', 'receptions': 'Receptions',
-                    'carries': 'Rushing attempts', 'pass_attempts': 'Pass attempts',
-                    'completions': 'Pass completions',
-                }
-                usage_rows = []
-                for metric, label in opportunity_metrics.items():
-                    if metric not in full.columns:
-                        continue
-                    history_usage = pd.to_numeric(full[metric], errors='coerce').dropna()
-                    if len(history_usage) < 3:
-                        continue
-                    last_five = history_usage.tail(5)
-                    prior_five = history_usage.iloc[-10:-5]
-                    usage_rows.append({
-                        'Opportunity metric': label,
-                        'Last 5 avg': round(float(last_five.mean()), 2),
-                        'Previous 5 avg': round(float(prior_five.mean()), 2) if len(prior_five) >= 3 else None,
-                        'Selected-history avg': round(float(history_usage.mean()), 2),
-                        'Observations': len(history_usage),
-                    })
-                if usage_rows:
-                    usage_frame = pd.DataFrame(usage_rows)
-                    usage_frame['Change vs previous'] = usage_frame.apply(
-                        lambda r: (r['Last 5 avg'] - r['Previous 5 avg']) if pd.notna(r['Previous 5 avg']) else float('nan'), axis=1)
-                    def opportunity_color(v):
-                        if pd.isna(v): return ''
-                        return 'color: #4ade80; font-weight: 700' if v > 0 else 'color: #f87171; font-weight: 700' if v < 0 else 'color: #cbd5e1'
-                    st.dataframe(usage_frame.style.map(opportunity_color, subset=['Change vs previous']), hide_index=True, use_container_width=True)
-                    st.caption('Opportunity counts help explain changes in production. These are historical observations, not snap share, route participation, injury updates, or predictive probabilities. Previous 5 requires at least three observations.')
+                market_key = f'profile_market_{normalized_player(player)}'
+                market = top_market.selectbox('PROP MARKET', available, format_func=lambda m:MARKETS.get(m,m), key=market_key)
+                full = logs.loc[logs['player'].astype(str).eq(player)].copy()
+                full[market] = pd.to_numeric(full[market],errors='coerce')
+                full = full.dropna(subset=[market]).sort_values(['season','week','game_date'])
+                years = sorted(full['season'].dropna().astype(int).unique().tolist(),reverse=True) if 'season' in full else []
+                if years:
+                    season_default = 2026 if 2026 in years else years[0]
+                    chosen_year = top_season.selectbox('SEASON',years,index=years.index(season_default),key='profile_single_season')
+                    full = full.loc[full['season'].eq(chosen_year)].copy()
+                else: chosen_year = None
+                window = top_window.selectbox('GAMES',['L5','L10','L20','All'],index=0,key='profile_window')
+                with st.popover('More filters', use_container_width=False):
+                    opponents = ['All opponents']+sorted(full['opponent'].dropna().astype(str).unique().tolist())
+                    opponent_filter = st.selectbox('Historical opponent',opponents,key='profile_history_opponent')
+                    if opponent_filter != 'All opponents':
+                        st.caption('Filtering changes the sample and chart, not the upcoming opponent.')
+                sample = full if opponent_filter=='All opponents' else full.loc[full['opponent'].astype(str).eq(opponent_filter)]
+                view = sample.tail({'L5':5,'L10':10,'L20':20,'All':len(sample)}[window]).copy()
+                if view.empty:
+                    st.info('No game logs match these filters.')
                 else:
-                    st.caption('No supported opportunity statistics are available for this player in the selected history.')
-                # Contextual defense scouting is part of the player profile, not a separate page.
-                st.divider()
-                st.subheader('Opponent defense · Position-specific production allowed')
-                player_team = None
-                if 'team' in logs.columns:
-                    team_values = logs.loc[logs['player'].astype(str).eq(player), 'team'].dropna().astype(str)
-                    if not team_values.empty:
-                        player_team = team_values.iloc[-1].upper().strip()
-                if current_roster is not None and 'roster_team' in logs.columns:
-                    roster_teams = logs.loc[logs['player'].astype(str).eq(player), 'roster_team'].dropna().astype(str)
-                    if not roster_teams.empty:
-                        player_team = roster_teams.iloc[-1].upper().strip()
-                upcoming_opponent = None
-                if selected_teams and player_team in selected_teams:
-                    upcoming_opponent = next(iter(selected_teams - {player_team}), None)
-                elif schedule is not None and not schedule.empty and player_team:
-                    upcoming = schedule.copy()
-                    upcoming['gameday'] = pd.to_datetime(upcoming['gameday'], errors='coerce', utc=True)
-                    upcoming = upcoming[(upcoming['gameday'] >= pd.Timestamp.now(tz='UTC').normalize()) &
-                                        ((upcoming['home_team'].astype(str).eq(player_team)) | (upcoming['away_team'].astype(str).eq(player_team)))]
-                    if not upcoming.empty:
-                        next_game = upcoming.sort_values('gameday').iloc[0]
-                        upcoming_opponent = str(next_game['away_team'] if str(next_game['home_team']) == player_team else next_game['home_team'])
-                st.caption('Automatically uses the selected matchup or next scheduled opponent when available. You can change the defense below.')
-                if upcoming_opponent:
-                    st.write(f'**{player_team or "Team unknown"} vs {upcoming_opponent}**')
-                else:
-                    st.info('No upcoming opponent identified. Choose a game in the sidebar or select a defense below for historical research.')
-                if {'opponent','season','week'}.issubset(logs.columns) and 'roster_position' in logs.columns:
-                    possible_positions = logs.loc[logs['player'].astype(str).eq(player), 'roster_position'].dropna().astype(str)
-                    player_position = possible_positions.iloc[-1].upper() if not possible_positions.empty else None
-                    if player_position not in {'QB','RB','WR','TE'}:
-                        st.caption('Position-specific defensive statistics are available for QB, RB, WR and TE with verified roster-position matches.')
-                    else:
-                        defense_data = logs.copy()
-                        defense_data['opponent'] = defense_data['opponent'].astype(str).str.upper().str.strip()
-                        defense_data['season'] = pd.to_numeric(defense_data['season'], errors='coerce')
-                        defense_data['week'] = pd.to_numeric(defense_data['week'], errors='coerce')
-                        defense_data = defense_data[defense_data['roster_position'].fillna('').astype(str).str.upper().eq(player_position)]
-                        defense_seasons = sorted(defense_data['season'].dropna().astype(int).unique().tolist(), reverse=True)
-                        if defense_seasons:
-                            col_d1, col_d2 = st.columns(2)
-                            d_season = col_d1.selectbox('Defense statistics season', defense_seasons, key='profile_def_season')
-                            defense_names = sorted(defense_data.loc[defense_data['season'].eq(d_season), 'opponent'].dropna().unique().tolist())
-                            if defense_names:
-                                d_default = defense_names.index(upcoming_opponent) if upcoming_opponent in defense_names else 0
-                                d_team = col_d2.selectbox('Defense to analyze', defense_names, index=d_default, key=f'profile_def_team_{player_position}')
-                                pos_metrics = {
-                                    'QB':['passing_yards','passing_tds','pass_attempts','completions','interceptions','rushing_yards','carries','rushing_tds'],
-                                    'RB':['rushing_yards','carries','rushing_tds','receiving_yards','receptions','targets'],
-                                    'WR':['receiving_yards','receptions','targets','receiving_tds'],
-                                    'TE':['receiving_yards','receptions','targets','receiving_tds'],
-                                }
-                                defense_data = defense_data[defense_data['season'].eq(d_season)].copy()
-                                def_rows=[]
-                                weekly_chart_data={}
-                                for metric_key in pos_metrics[player_position]:
-                                    if metric_key not in defense_data.columns: continue
-                                    metric_data = defense_data[['opponent','season','week',metric_key]].copy()
-                                    metric_data[metric_key] = pd.to_numeric(metric_data[metric_key], errors='coerce')
-                                    metric_data = metric_data.dropna(subset=['week',metric_key])
-                                    if metric_data.empty: continue
-                                    # For each game, sum all players at the selected offensive position.
-                                    weekly = metric_data.groupby(['opponent','season','week'], as_index=False)[metric_key].sum()
-                                    selected_def = weekly[weekly['opponent'].eq(d_team)].sort_values('week')
-                                    if selected_def.empty: continue
-                                    league_mean = weekly[metric_key].mean()
-                                    allowed = selected_def[metric_key].mean()
-                                    def_rows.append({'Stat':MARKETS.get(metric_key,metric_key),
-                                                     'Allowed / game':round(allowed,1),
-                                                     'Last 5 games':round(selected_def[metric_key].tail(5).mean(),1),
-                                                     'League avg':round(league_mean,1),
-                                                     'Vs league':f'{(allowed/league_mean-1)*100:+.1f}%' if league_mean>0 else 'N/A',
-                                                     'Games':len(selected_def)})
-                                    # Rank defensive strength from fewest allowed (1) to most allowed.
-                                    # Only rank teams with at least one observed game; show coverage.
-                                    team_avgs = weekly.groupby('opponent')[metric_key].mean()
-                                    rank = int(team_avgs.rank(method='min', ascending=True).loc[d_team])
-                                    count_teams = int(team_avgs.size)
-                                    def_rows[-1]['Defense rank'] = rank
-                                    def_rows[-1]['Teams ranked'] = count_teams
-                                    weekly_chart_data[metric_key] = selected_def
-                                if def_rows:
-                                    st.markdown(f'**{d_team} vs {player_position}s — production allowed**')
-                                    rank_frame = pd.DataFrame(def_rows)
-                                    rank_frame['Defense rank'] = rank_frame.apply(
-                                        lambda r: f"#{int(r['Defense rank'])} / {int(r['Teams ranked'])}", axis=1)
-                                    rank_frame = rank_frame.drop(columns=['Teams ranked'])
-                                    rank_frame = rank_frame[['Stat', 'Defense rank', 'Allowed / game', 'Last 5 games', 'League avg', 'Vs league', 'Games']]
-
-                                    def rank_style(row):
-                                        # Red = harder for the offensive player; green = more allowed.
-                                        rank_num = int(row['Defense rank'].split(' / ')[0][1:])
-                                        total = int(row['Defense rank'].split(' / ')[1])
-                                        percentile = (rank_num - 1) / max(total - 1, 1)
-                                        color = '#f87171' if percentile < .25 else '#fb923c' if percentile < .375 else '#facc15' if percentile > .625 and percentile < .75 else '#4ade80' if percentile >= .75 else '#cbd5e1'
-                                        return [f'color: {color}; font-weight: 700' if col == 'Defense rank' else '' for col in row.index]
-
-                                    st.dataframe(rank_frame.style.apply(rank_style, axis=1), hide_index=True, use_container_width=True)
-                                    st.caption('Rank #1 = fewest allowed (red / difficult for offense); bottom-quarter defenses = green / more allowed. Ranks compare available teams for the selected season, not necessarily all 32. Missing position matches can distort ranks.')
-                                    chart_metric = st.selectbox('Defensive game-by-game chart', list(weekly_chart_data),
-                                                                format_func=lambda m:MARKETS.get(m,m), key='profile_def_chart')
-                                    chart_data = weekly_chart_data[chart_metric]
-                                    def_fig = px.bar(chart_data, x='week', y=chart_metric,
-                                        title=f'{d_team} · {MARKETS.get(chart_metric, chart_metric)} allowed to {player_position}s',
-                                        labels={'week':'Week',chart_metric:'Total allowed'})
-                                    def_fig.update_traces(marker_color='#58b9af')
-                                    def_fig.update_layout(template='plotly_dark', paper_bgcolor='#101a2a', plot_bgcolor='#101a2a',
-                                        font=dict(color='#dce8f5'), margin=dict(l=15,r=15,t=55,b=20),
-                                        xaxis=dict(showgrid=False), yaxis=dict(gridcolor='#26364b'))
-                                    st.plotly_chart(def_fig, use_container_width=True)
-                                    st.caption('These are combined game totals for ALL opposing players at this position, not an individual-player projection. Historical position labels come from roster matching; incomplete matches can undercount totals. No coverage, blitz or pressure measurements are implied. No automatic betting edge is inferred.')
-                                else:
-                                    st.info('No verified position-specific production found for this defense and season.')
-                            else:
-                                st.info('No defensive opponents available for the selected season.')
-                        else:
-                            st.info('No verified position-specific historical games available.')
-                else:
-                    st.caption('Defensive matchup research requires NFL opponent, season, week and roster-position data.')
-                st.divider()
-                st.subheader('Defensive personnel · Injury report')
-                if upcoming_opponent or 'd_team' in locals():
-                    injury_defense = d_team if 'd_team' in locals() else upcoming_opponent
-                    selected_injury_week = None
-                    if 'selected_week' in globals() and selected_week is not None:
-                        try:
-                            selected_injury_week = int(selected_week)
-                        except (ValueError, TypeError):
-                            pass
-                    report, report_note = injury_team_view(injury_reports, injury_defense, current_season, selected_injury_week)
-                    st.caption(f"{injury_defense} · nflverse injury reports · {report_note} Entries are not confirmation of a final inactive list.")
-                    if report.empty:
-                        st.info('No verified defensive injury entries available for this selection.')
-                    else:
-                        st.dataframe(report, hide_index=True, use_container_width=True)
-                        st.caption('Practice and game statuses can change. Verify final inactives near kickoff. No automatic injury-based projection adjustment is applied.')
-                else:
-                    st.info('Select a defensive opponent to review reported defensive injuries.')
-                if injury_error:
-                    st.caption(f'Injury data unavailable: {injury_error}')
-                st.divider()
-                st.subheader('Scheme scouting · Man, zone and fronts')
-                st.caption('Free FTN charting (when available) is loaded once per day. Rates below are descriptive, not player-specific scheme advantages.')
-                scheme_defense = d_team if 'd_team' in locals() else upcoming_opponent
-                scheme_season = int(d_season) if 'd_season' in locals() else int(current_season)
-                if scheme_defense:
-                    try:
-                        ftn_data = fetch_ftn_charting(scheme_season)
-                        try:
-                            pbp_keys = fetch_pbp_defense_keys(scheme_season)
-                        except Exception:
-                            pbp_keys = None
-                        ftn_summary, ftn_note = ftn_defense_summary(ftn_data, scheme_defense, schedule, pbp_keys)
-                        if ftn_summary.empty:
-                            st.info('FTN charting: ' + ftn_note)
-                        else:
-                            st.dataframe(ftn_summary, hide_index=True, use_container_width=True)
-                            st.caption('FTN charting · ' + ftn_note + ' Availability and definitions depend on the upstream dataset.')
-                    except Exception as exc:
-                        st.info('FTN charting unavailable for this season: ' + str(exc))
-                else:
-                    st.info('Select an opposing defense to view available charting tendencies.')
-                st.markdown('**Verified free reference:** [Sharp Football Analysis — defensive coverage tendencies](https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-schemes/). Includes published team man/zone rates and safety-shell tendencies. Open the source to inspect the selected defense.')
-                st.caption('Coverage describes man/zone assignments; a 4–3 front describes defensive personnel alignment. These are distinct. The existing nflverse weekly game logs do not provide reliable player-versus-coverage splits.')
-                st.info('Player-versus-man, player-versus-zone, Cover 1/3, and 4–3 efficiency: data unavailable in the connected free feeds. No scheme advantage is scored or assumed.')
-                with st.expander('Add verified scheme research (optional CSV)', expanded=False):
-                    st.caption('For licensed or manually compiled source data, upload a CSV with columns: team, season, man_pct, zone_pct, source, observed_at. The app will display the data, not infer player performance.')
-                    scheme_upload = st.file_uploader('Defensive coverage CSV', type='csv', key='profile_scheme_csv')
-                    if scheme_upload is not None:
-                        try:
-                            scheme = pd.read_csv(scheme_upload)
-                            required = {'team','season','man_pct','zone_pct','source','observed_at'}
-                            if not required.issubset(scheme.columns):
-                                st.warning('Missing columns: ' + ', '.join(sorted(required-set(scheme.columns))))
-                            else:
-                                active_defense = d_team if 'd_team' in locals() else upcoming_opponent
-                                rows = scheme[scheme['team'].astype(str).str.upper().eq(str(active_defense).upper())].copy()
-                                if rows.empty:
-                                    st.info('No scheme data for the selected opponent.')
-                                else:
-                                    st.dataframe(rows, hide_index=True, use_container_width=True)
-                                    st.caption('User-supplied research; verify source dates and definitions. These rates do not establish player-specific performance.')
-                        except Exception as exc:
-                            st.warning(f'Unable to read scheme CSV: {exc}')
-                st.divider()
-                if len(full)>=5:
-                    st.subheader('Momentum snapshot')
+                    vals = pd.to_numeric(view[market],errors='coerce').dropna()
                     recent = pd.to_numeric(full[market],errors='coerce').dropna().tail(5)
-                    baseline = pd.to_numeric(full[market],errors='coerce').dropna().iloc[:-5]
-                    delta = float(recent.mean() - baseline.mean()) if len(baseline) >= 3 else float('nan')
-                    st.write(f'Last 5 average: **{recent.mean():.1f}** | Previous games average: **{baseline.mean():.1f}**' if len(baseline) >= 3 else f'Last 5 average: **{recent.mean():.1f}** | Not enough earlier games for comparison')
-                    momentum_color = '#4ade80' if delta > 0 else '#f87171' if delta < 0 else '#cbd5e1'
-                    if np.isfinite(delta):
-                        st.markdown(f"Difference vs previous games: <span style='color:{momentum_color};font-weight:700'>{delta:+.1f}</span>", unsafe_allow_html=True)
-                    st.caption('Recent performance can reflect opportunity, matchups, or random variation. This is not an independently validated prediction adjustment.')
+                    prior = pd.to_numeric(full[market],errors='coerce').dropna().iloc[-10:-5]
+                    def fmt(x):
+                        if x is None or not np.isfinite(float(x)): return '—'
+                        return f'{float(x):.1f}'.rstrip('0').rstrip('.')
+                    # Resolve opponent from selected game, then next scheduled game.
+                    opponent = None
+                    if selected_teams and team in selected_teams: opponent = next(iter(selected_teams-{team}),None)
+                    if opponent is None and schedule is not None and not schedule.empty and team:
+                        games = schedule.copy()
+                        game_dates = pd.to_datetime(games.get('gameday'),errors='coerce',utc=True)
+                        future = games.loc[game_dates.ge(pd.Timestamp.now(tz='UTC').normalize()) & (games['home_team'].astype(str).eq(team)|games['away_team'].astype(str).eq(team))]
+                        if not future.empty:
+                            game = future.assign(_dt=game_dates.loc[future.index]).sort_values('_dt').iloc[0]
+                            opponent = str(game['away_team'] if game['home_team']==team else game['home_team'])
+                    name_col, info_col = st.columns([.10,.90],vertical_alignment='center',gap='small')
+                    with name_col:
+                        if isinstance(portrait,str) and portrait.startswith('https://'): st.image(portrait,width=65)
+                        else: st.markdown('🏈')
+                    with info_col:
+                        st.markdown(f'<div class="profile-title">{player} <span>{pos} · {team} · {MARKETS.get(market,market)}</span></div>',unsafe_allow_html=True)
+                        st.markdown(f'<div class="profile-sub">{("vs "+opponent) if opponent else "Opponent not confirmed"} &nbsp;·&nbsp; {chosen_year or "All seasons"} &nbsp;·&nbsp; {window} game sample</div>',unsafe_allow_html=True)
+                    matching = lines.loc[lines['_player_key'].eq(normalized_player(player)) & lines['market'].eq(market)] if lines is not None and '_player_key' in lines else pd.DataFrame()
+                    observed = not matching.empty
+                    line = None
+                    if observed:
+                        line_values = sorted(pd.to_numeric(matching['line'],errors='coerce').dropna().unique().tolist())
+                        if line_values: line = st.selectbox('Observed Underdog line',line_values,key=f'profile_observed_{normalized_player(player)}_{market}',format_func=fmt)
+                    if not observed:
+                        with st.popover('No observed line · optional comparison'):
+                            st.caption('The free API board is partial. This does not mean Underdog has no offer.')
+                            manual_on = st.checkbox('Use hypothetical line',key='profile_manual_on')
+                            manual_val = st.number_input('Hypothetical line',min_value=0.0,value=float(round(vals.mean()*2)/2),step=0.5,key=f'profile_manual_{normalized_player(player)}_{market}') if manual_on else None
+                        if manual_on: line = manual_val
+                    score_cols = st.columns(5,gap='small')
+                    score_items = [('Sample avg',fmt(vals.mean())),('Last 5',fmt(recent.mean())),('Previous 5',fmt(prior.mean()) if len(prior)>=3 else '—'),('Games',str(len(vals))),('Line',fmt(line) if line is not None else '—')]
+                    for col,(label,value) in zip(score_cols,score_items):
+                        with col: st.markdown(f'<div class="mini-score"><small>{label}</small><strong>{value}</strong></div>',unsafe_allow_html=True)
+                    main,rail = st.columns([2.05,1],gap='small')
+                    with main:
+                        if line is not None:
+                            above=int((vals>line).sum()); below=int((vals<line).sum()); pushes=int((vals==line).sum())
+                            st.markdown(f'<div class="compact-section">GAME LOG <span>{above}/{len(vals)} above · {below}/{len(vals)} below · {pushes} pushes · {"Observed" if observed else "Hypothetical"} line</span></div>',unsafe_allow_html=True)
+                        else:
+                            st.markdown('<div class="compact-section">GAME LOG <span>Historical results · No comparison line</span></div>',unsafe_allow_html=True)
+                        plot=view.copy()
+                        plot['Game'] = (plot['season'].astype('Int64').astype(str)+' W'+plot['week'].astype('Int64').astype(str)) if {'season','week'}.issubset(plot.columns) else plot['game_date'].dt.strftime('%m/%d')
+                        plot['Result'] = 'No line' if line is None else np.select([plot[market]>line,plot[market]<line],['Higher','Lower'],default='Push')
+                        fig=px.bar(plot,x='Game',y=market,color='Result',color_discrete_map={'Higher':'#12d69d','Lower':'#e33e1a','Push':'#f0c36b','No line':'#368cbd'},hover_data=['opponent'])
+                        if line is not None: fig.add_hline(y=line,line_dash='dash',line_color='#d4b86a')
+                        fig.update_layout(template='plotly_dark',height=292,margin=dict(l=2,r=2,t=10,b=8),paper_bgcolor='#0b0d10',plot_bgcolor='#0b0d10',showlegend=False,font=dict(size=10,color='#b9c4d0'),xaxis=dict(showgrid=False,title=None),yaxis=dict(gridcolor='#24272c',title=None),bargap=.22)
+                        st.plotly_chart(fig,use_container_width=True,config={'displayModeBar':False})
+                        with st.expander('Game logs · download',expanded=False):
+                            cols=[c for c in ['season','week','opponent',market,'targets','carries','pass_attempts'] if c in view]
+                            shown=view[cols].iloc[::-1].copy()
+                            for c in shown.select_dtypes(include='number').columns:
+                                if c not in ('season','week'): shown[c]=shown[c].round(1)
+                            st.dataframe(shown,hide_index=True,use_container_width=True)
+                            st.download_button('Download CSV',view.to_csv(index=False),f'{normalized_player(player).replace(" ","_")}_games.csv','text/csv')
+                        st.markdown('<div class="compact-section">OPPORTUNITY <span>Last five vs previous five games</span></div>',unsafe_allow_html=True)
+                        usage=[]
+                        usage_metrics={'QB':['pass_attempts','completions','carries'],'RB':['carries','targets','receptions'],'WR':['targets','receptions','carries'],'TE':['targets','receptions']}.get(pos,['targets','carries'])
+                        for m in usage_metrics:
+                            if m not in full: continue
+                            series=pd.to_numeric(full[m],errors='coerce').dropna()
+                            if len(series)<3: continue
+                            r=series.tail(5); p=series.iloc[-10:-5]
+                            usage.append({'Stat':MARKETS.get(m,m),'L5':fmt(r.mean()),'Previous 5':fmt(p.mean()) if len(p)>=3 else '—','Change':fmt(r.mean()-p.mean()) if len(p)>=3 else '—'})
+                        if usage: st.dataframe(pd.DataFrame(usage),hide_index=True,use_container_width=True,height=min(38+35*len(usage),185))
+                        else: st.caption('Opportunity data unavailable for this player.')
+                        with st.expander('Advanced scouting · FTN schemes and historical defense',expanded=False):
+                            st.caption('FTN charting is descriptive and does not measure player-versus-man/zone efficiency.')
+                            if opponent and chosen_year is not None:
+                                if st.checkbox('Load FTN charting',key='load_ftn_on_demand'):
+                                    try:
+                                        chart=fetch_ftn_charting(int(chosen_year))
+                                        try: pbp=fetch_pbp_defense_keys(int(chosen_year))
+                                        except Exception: pbp=None
+                                        ftn,ftn_note=ftn_defense_summary(chart,opponent,schedule,pbp)
+                                        if ftn.empty: st.info(ftn_note)
+                                        else: st.dataframe(ftn,hide_index=True,use_container_width=True)
+                                    except Exception as exc: st.info(f'FTN unavailable: {exc}')
+                            st.markdown('[Published team coverage tendencies · Sharp Football Analysis](https://www.sharpfootballanalysis.com/stats-nfl/nfl-coverage-schemes/)')
+                            st.caption('No inferred coverage percentages or player scheme advantage.')
+                    with rail:
+                        st.markdown(f'<div class="compact-section">DEFENSE <span>{("vs "+opponent) if opponent else "No matchup"}</span></div>',unsafe_allow_html=True)
+                        if opponent and pos in ('QB','RB','WR','TE') and {'season','week','opponent','roster_position'}.issubset(logs):
+                            defensive = logs.loc[logs['roster_position'].fillna('').astype(str).str.upper().eq(pos)].copy()
+                            if chosen_year is not None: defensive=defensive.loc[defensive['season'].eq(chosen_year)]
+                            metrics={'QB':['passing_yards','passing_tds','rushing_yards','interceptions'],'RB':['rushing_yards','carries','receiving_yards','receptions'],'WR':['receiving_yards','receptions','targets','receiving_tds'],'TE':['receiving_yards','receptions','targets','receiving_tds']}[pos]
+                            defense_rows=[]
+                            for m in metrics:
+                                if m not in defensive: continue
+                                grouped=defensive.groupby(['opponent','season','week'],as_index=False)[m].sum().groupby('opponent')[m].mean().sort_values()
+                                if opponent not in grouped.index: continue
+                                rank=int(grouped.index.get_loc(opponent))+1
+                                n=len(grouped)
+                                defense_rows.append({'Stat':MARKETS.get(m,m),'Allowed':fmt(grouped.loc[opponent]),'Rank':f'#{rank}/{n}','_rank':rank,'_count':n})
+                            if defense_rows:
+                                for row in defense_rows:
+                                    color='#f87171' if row['_rank']<=max(1,row['_count']//3) else '#4ade80' if row['_rank']>=max(1,2*row['_count']//3) else '#e4c56e'
+                                    st.markdown(f'<div class="defense-stat"><span>{row["Stat"]}</span><strong>{row["Allowed"]}</strong><b style="color:{color}">{row["Rank"]}</b></div>',unsafe_allow_html=True)
+                                st.caption('Rank #1 = fewest allowed. Totals depend on roster matching; may undercount.')
+                            else: st.caption('No matching defense totals.')
+                        else: st.caption('Select an opponent to view defensive allowances.')
+                        st.markdown('<div class="compact-section">INJURY REPORT <span>Defensive personnel</span></div>',unsafe_allow_html=True)
+                        if opponent:
+                            report,note=injury_team_view(injury_reports,opponent,current_season,filter_week)
+                            if not report.empty:
+                                report=report.copy()
+                                for col in ['Practice','Game status']:
+                                    if col in report:
+                                        text_col=report[col].fillna('').astype(str).str.strip()
+                                        if col=='Practice':
+                                            report[col]=text_col.map(lambda x:'DNP' if re.search(r'(?i)did not practice|not participating|non.participant|^dnp$',x) else 'LP' if re.search(r'(?i)limited|^lp$',x) else 'FP' if re.search(r'(?i)full participation|full practice|^fp$',x) else x)
+                                keep=[c for c in ['Player','Position','Practice','Game status'] if c in report]
+                                st.dataframe(report[keep].head(8),hide_index=True,use_container_width=True,height=min(315,38+35*min(len(report),8)))
+                                st.caption('DNP = did not practice · LP = limited · FP = full. Verify final inactives.')
+                            else: st.caption(note)
+                        else: st.caption('No confirmed opponent.')
+                        with st.expander('More matchup context',expanded=False):
+                            st.caption('Practice status is not a confirmed game inactive. No automatic injury adjustment is applied.')
+                            st.caption('Man/zone player efficiency is unavailable in the connected free sources.')
+                    # Research limitations live in one collapsed panel, not repeated across the page.
+                    with st.expander('Data notes & methodology',expanded=False):
+                        st.caption('Underdog offers are a partial cached API sample, not the full live board. Historical hit rates are not calibrated predictions. Position-specific defensive totals may undercount because of roster matching. FTN coverage fields are not assumed when absent.')
 if nav_page == '📈 Trends':
     st.header('Momentum Tracker')
     st.write('Momentum is measured as the last-five-game average minus the available historical average. It is descriptive, not proof that a trend will continue.')

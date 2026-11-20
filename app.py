@@ -362,7 +362,7 @@ with st.sidebar:
         dates = pd.to_datetime(season_games.get("gameday"), errors="coerce", utc=True)
         future_games = season_games.loc[dates.ge(now_utc.normalize())]
         if not future_games.empty:
-            suggested_week = int(future_games.sort_values("week").iloc[0]["week"])
+            suggested_week = int(future_games.assign(_date=dates.loc[future_games.index]).sort_values("_date").iloc[0]["week"])
         else:
             past_games = season_games.loc[dates.notna() & dates.lt(now_utc.normalize())]
             suggested_week = int(past_games.sort_values("week").iloc[-1]["week"]) if not past_games.empty else available_weeks[0]
@@ -576,17 +576,23 @@ with tabs[3]:
                     st.caption("Line selected from the retrieved API board. Check its observation time before use.")
                     line = float(chosen_line)
                 else:
-                    line = st.number_input('Manual comparison line (no observed line for this player/market)', min_value=0.0, value=50.5, step=0.5, key='research_line')
-                higher = int((vals > line).sum()); lower = int((vals < line).sum()); pushes = int((vals == line).sum())
-                h,l,p = st.columns(3)
-                h.metric('Higher in sample', f'{higher}/{len(vals)}')
-                l.metric('Lower in sample', f'{lower}/{len(vals)}')
-                p.metric('Exactly on line', pushes)
-                st.caption('These are descriptive historical counts, not predicted hit probabilities. Verify how Underdog handles ties for this market.')
+                    st.info('No observed Underdog line for this player and market in the retrieved board. Historical research is available below; line comparisons are optional.')
+                    use_manual = st.checkbox('Compare against a hypothetical line', value=False, key='research_use_manual_line')
+                    line = st.number_input('Hypothetical comparison line', min_value=0.0, value=float(round(vals.mean() * 2) / 2), step=0.5, key=f'research_line_{normalized_player(player)}_{market}') if use_manual else None
+                if line is not None:
+                    higher = int((vals > line).sum()); lower = int((vals < line).sum()); pushes = int((vals == line).sum())
+                    h,l,p = st.columns(3)
+                    h.metric('Higher in sample', f'{higher}/{len(vals)}')
+                    l.metric('Lower in sample', f'{lower}/{len(vals)}')
+                    p.metric('Exactly on line', pushes)
+                    st.caption('Historical counts only, not predicted probabilities. A hypothetical line is not an actual Underdog offer.')
+                else:
+                    st.caption('Line comparison hidden until an observed line is available or you enable a hypothetical comparison.')
                 plot = view.copy()
                 plot['Game'] = (plot['season'].astype('Int64').astype(str) + ' W' + plot['week'].astype('Int64').astype(str)) if {'season','week'}.issubset(plot.columns) else plot['game_date'].dt.strftime('%Y-%m-%d')
                 fig = px.line(plot, x='Game', y=market, markers=True, hover_data=['opponent'], title=f'{player} — {MARKETS[market]}')
-                fig.add_hline(y=line, line_dash='dash', annotation_text='Comparison line')
+                if line is not None:
+                    fig.add_hline(y=line, line_dash='dash', annotation_text='Observed line' if not matching_lines.empty else 'Hypothetical line')
                 st.plotly_chart(fig, use_container_width=True)
                 cols = [c for c in ['season','week','game_date','team','opponent',market,'targets','carries','pass_attempts'] if c in view.columns]
                 cols = list(dict.fromkeys(cols))

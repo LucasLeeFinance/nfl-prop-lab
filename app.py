@@ -79,6 +79,19 @@ h1,h2,h3 {letter-spacing:-.035em!important} h1{font-size:1.55rem!important} h2{f
 [data-testid="stRadio"] [role="radiogroup"] {gap:2px!important}
 [data-testid="stRadio"] label {padding:4px 0!important}
 .profile-eyebrow {color:#48d5ad!important}
+/* V20: compact app shell and always-accessible navigation */
+section[data-testid="stSidebar"] {height:100vh!important;overflow-y:auto!important}
+section[data-testid="stSidebar"] > div {height:100vh!important;overflow-y:auto!important}
+section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {gap:.35rem!important}
+[data-testid="stSidebarNav"] {position:sticky;top:0}
+.block-container {padding-top:.35rem!important}
+.nfl-brand {display:none!important}
+.nfl-pill {display:none!important}
+[data-testid="stSelectbox"] {margin-bottom:0!important}
+[data-testid="stMultiSelect"] {margin-bottom:0!important}
+[data-testid="stMetric"] {min-height:60px!important;padding:7px 10px!important}
+[data-testid="stMetricValue"] {font-size:1.23rem!important}
+[data-testid="stExpander"] details summary {padding:7px 11px!important}
 </style>""", unsafe_allow_html=True)
 st.markdown('<div class="nfl-brand"><div class="nfl-mark">🏈</div><div><div class="nfl-name">NFL PROP LAB</div><div class="nfl-sub">Player prop research workstation</div></div></div>', unsafe_allow_html=True)
 st.markdown('<span class="nfl-pill">UNDERDOG HIGHER / LOWER</span><span class="nfl-pill nfl-muted-pill">OFFENSE + KICKERS</span><span class="nfl-pill nfl-muted-pill">HISTORICAL MATCHUP RESEARCH</span>', unsafe_allow_html=True)
@@ -337,6 +350,19 @@ def injury_team_view(injuries, team, season, week=None):
     if not cols:
         return pd.DataFrame(), "Injury report fields were not recognized."
     result = data[list(cols)].rename(columns=cols)
+    if "Practice" in result.columns:
+        def practice_abbrev(value):
+            if pd.isna(value) or str(value).strip().lower() in ('', 'nan', 'none', 'not reported'):
+                return '—'
+            v = str(value).strip().lower()
+            if v in ('dnp','did not practice','did not participate','did not participate in practice','non participant','not participating') or 'did not practice' in v or 'did not participate' in v:
+                return 'DNP'
+            if v in ('lp','limited','limited participation','limited participant','limited practice') or 'limited' in v:
+                return 'LP'
+            if v in ('fp','full','full participation','full participant','full practice') or 'full participation' in v:
+                return 'FP'
+            return str(value)
+        result['Practice'] = result['Practice'].map(practice_abbrev)
     if "Position" in result:
         # Only defensive personnel; include DB position variants and front seven.
         defensive = {"CB","DB","S","FS","SS","LB","ILB","OLB","MLB","DE","DT","DL","NT","EDGE"}
@@ -457,23 +483,27 @@ def fetch_underdog_board(api_key):
     diagnostics["accepted_count"] = len(rows)
     return pd.DataFrame(rows, columns=columns), meta, response.headers.get("X-Credits-Cost", "Unknown"), diagnostics
 
+NAV_ITEMS = ['🏠 Dashboard', '👤 Player Research', '🏟️ Games', '🏆 Best Bets', '📈 Trends', '⚙️ Data & Model']
 with st.sidebar:
-    st.header('Data inputs')
-    st.caption('NFL history via nflreadpy; Underdog lines via your private API key. Free API credits are limited.')
-    source_mode = st.radio('Historical player data', ['Automatic NFL statistics', 'Upload my own CSV'], index=0)
-    if source_mode == 'Automatic NFL statistics':
-        selected_seasons = st.multiselect('NFL seasons', [2026, 2025, 2024, 2023], default=[2025, 2026])
-        st.caption('Source: nflverse via nflreadpy. Weekly statistics may update after games; some markets require other sources.')
-        log_upload = None
-    else:
-        log_upload = st.file_uploader('Player game logs (CSV)', type='csv', key='logs')
-    board_mode = st.radio('Underdog lines', ['Automatic API', 'Upload CSV'], index=0)
-    lines_upload = st.file_uploader('Underdog projections (CSV)', type='csv', key='lines') if board_mode == 'Upload CSV' else None
-    st.markdown('**Optional qualitative matchup inputs**')
-    st.caption('Adjustments are research scenarios, not validated prediction improvements.')
-    momentum_weight = st.slider('Recent-form weight', 0.0, 0.5, 0.25, 0.05)
-    context_shift = st.slider('Manual matchup adjustment (%)', -20, 20, 0, 1)
-    st.caption('Positive adjustment raises the estimated stat mean; negative lowers it.')
+    st.markdown('### NFL PROP LAB')
+    nav_page = st.radio('Workspace', NAV_ITEMS, index=0, label_visibility='collapsed', key='primary_navigation')
+    st.divider()
+    with st.expander('Data sources & model settings', expanded=False):
+        st.caption('NFL history via nflreadpy; Underdog lines via your private API key. Free API credits are limited.')
+        source_mode = st.radio('Historical player data', ['Automatic NFL statistics', 'Upload my own CSV'], index=0)
+        if source_mode == 'Automatic NFL statistics':
+            selected_seasons = st.multiselect('NFL seasons', [2026, 2025, 2024, 2023], default=[2025, 2026])
+            st.caption('Source: nflverse via nflreadpy. Weekly statistics may update after games; some markets require other sources.')
+            log_upload = None
+        else:
+            log_upload = st.file_uploader('Player game logs (CSV)', type='csv', key='logs')
+        board_mode = st.radio('Underdog lines', ['Automatic API', 'Upload CSV'], index=0)
+        lines_upload = st.file_uploader('Underdog projections (CSV)', type='csv', key='lines') if board_mode == 'Upload CSV' else None
+        st.markdown('**Optional qualitative matchup inputs**')
+        st.caption('Adjustments are research scenarios, not validated prediction improvements.')
+        momentum_weight = st.slider('Recent-form weight', 0.0, 0.5, 0.25, 0.05)
+        context_shift = st.slider('Manual matchup adjustment (%)', -20, 20, 0, 1)
+        st.caption('Positive adjustment raises the estimated stat mean; negative lowers it.')
 
 logs = None
 if source_mode == 'Automatic NFL statistics':
@@ -569,32 +599,31 @@ if source_mode == 'Automatic NFL statistics' and selected_seasons:
         st.sidebar.warning(f"Schedule unavailable: {exc}")
 
 with st.sidebar:
-    st.divider()
-    st.subheader("Weekly game filter")
-    if schedule is not None and not schedule.empty:
-        schedule_seasons = sorted(schedule["season"].dropna().astype(int).unique(), reverse=True)
-        filter_season = st.selectbox("Season", schedule_seasons, index=schedule_seasons.index(current_season) if current_season in schedule_seasons else 0, key="game_filter_season")
-        available_weeks = sorted(schedule.loc[schedule.season.eq(filter_season), "week"].dropna().astype(int).unique())
-        # Default to the current/upcoming regular-season week, not Week 18.
-        now_utc = pd.Timestamp.now(tz="UTC")
-        season_games = schedule.loc[schedule.season.eq(filter_season)].copy()
-        dates = pd.to_datetime(season_games.get("gameday"), errors="coerce", utc=True)
-        future_games = season_games.loc[dates.ge(now_utc.normalize())]
-        if not future_games.empty:
-            suggested_week = int(future_games.assign(_date=dates.loc[future_games.index]).sort_values("_date").iloc[0]["week"])
+    with st.expander("Weekly game filter", expanded=False):
+        if schedule is not None and not schedule.empty:
+            schedule_seasons = sorted(schedule["season"].dropna().astype(int).unique(), reverse=True)
+            filter_season = st.selectbox("Season", schedule_seasons, index=schedule_seasons.index(current_season) if current_season in schedule_seasons else 0, key="game_filter_season")
+            available_weeks = sorted(schedule.loc[schedule.season.eq(filter_season), "week"].dropna().astype(int).unique())
+            # Default to the current/upcoming regular-season week, not Week 18.
+            now_utc = pd.Timestamp.now(tz="UTC")
+            season_games = schedule.loc[schedule.season.eq(filter_season)].copy()
+            dates = pd.to_datetime(season_games.get("gameday"), errors="coerce", utc=True)
+            future_games = season_games.loc[dates.ge(now_utc.normalize())]
+            if not future_games.empty:
+                suggested_week = int(future_games.assign(_date=dates.loc[future_games.index]).sort_values("_date").iloc[0]["week"])
+            else:
+                past_games = season_games.loc[dates.notna() & dates.lt(now_utc.normalize())]
+                suggested_week = int(past_games.sort_values("week").iloc[-1]["week"]) if not past_games.empty else available_weeks[0]
+            filter_week = st.selectbox("Week", available_weeks, index=available_weeks.index(suggested_week), key="game_filter_week")
+            week_schedule = schedule[schedule.season.eq(filter_season) & schedule.week.eq(filter_week)].copy()
+            game_choices = ["All games"] + week_schedule["matchup"].drop_duplicates().tolist()
+            selected_matchup = st.selectbox("Game", game_choices, key="game_filter_matchup")
         else:
-            past_games = season_games.loc[dates.notna() & dates.lt(now_utc.normalize())]
-            suggested_week = int(past_games.sort_values("week").iloc[-1]["week"]) if not past_games.empty else available_weeks[0]
-        filter_week = st.selectbox("Week", available_weeks, index=available_weeks.index(suggested_week), key="game_filter_week")
-        week_schedule = schedule[schedule.season.eq(filter_season) & schedule.week.eq(filter_week)].copy()
-        game_choices = ["All games"] + week_schedule["matchup"].drop_duplicates().tolist()
-        selected_matchup = st.selectbox("Game", game_choices, key="game_filter_matchup")
-    else:
-        filter_season = None
-        filter_week = None
-        week_schedule = pd.DataFrame()
-        selected_matchup = "All games"
-        st.caption("Weekly games appear after a schedule is loaded.")
+            filter_season = None
+            filter_week = None
+            week_schedule = pd.DataFrame()
+            selected_matchup = "All games"
+            st.caption("Weekly games appear after a schedule is loaded.")
 
 # Preserve the complete historical dataset for player research; use the selector for slate views.
 slate_logs = logs.copy() if logs is not None else None
@@ -669,11 +698,6 @@ if logs is not None and slate_lines is not None and not slate_lines.empty:
         st.caption('This diagnostic does not make additional API requests or consume extra credits.')
 
 # Compact application navigation: only the selected workspace is rendered.
-NAV_ITEMS = ['🏠 Dashboard', '👤 Player Research', '🏟️ Games', '🏆 Best Bets', '📈 Trends', '⚙️ Data & Model']
-with st.sidebar:
-    st.markdown('### WORKSPACES')
-    nav_page = st.radio('Navigation', NAV_ITEMS, index=0, label_visibility='collapsed', key='primary_navigation')
-    st.caption('Select a workspace. Advanced data settings remain above.')
 
 st.markdown('<div class="workspace-kicker">RESEARCH WORKSPACE</div>', unsafe_allow_html=True)
 
@@ -766,11 +790,12 @@ if nav_page == '🏟️ Games':
             st.dataframe(slate_lines[cols], hide_index=True, use_container_width=True)
 
 if nav_page == '👤 Player Research':
-    st.markdown('<div class="workspace-kicker">PLAYER ANALYTICS</div><div class="hero-title">Player Research</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-title">Player Research</div>', unsafe_allow_html=True)
     if logs is None:
         st.info('Load automatic NFL statistics or upload a player game-log CSV to start.')
     else:
-        show_historical = st.checkbox("Include historical / non-current players", value=False, key="include_historical_players")
+        with st.popover('Player filters'):
+            show_historical = st.checkbox('Include historical / non-current players', value=False, key='include_historical_players')
         player_pool = logs if show_historical else logs[logs["_current_roster"]].copy()
         if not show_historical and current_roster is None:
             st.caption("Current roster unavailable: using players who appeared in the latest selected season as a fallback, not verified active status.")
@@ -792,7 +817,7 @@ if nav_page == '👤 Player Research':
         profile_rows = player_pool.loc[player_pool['player'].astype(str).eq(player)]
         latest_profile = profile_rows.sort_values('game_date').iloc[-1] if not profile_rows.empty else None
         position = str(latest_profile.get('roster_position', '') or '') if latest_profile is not None else ''
-        team_name = str(latest_profile.get('roster_team', '') or '') if latest_profile is not None else ''
+        team_name = str(latest_profile.get('team', '') or '') if latest_profile is not None else ''
         if not team_name or team_name.lower() in ('nan', 'none'):
             team_name = str(latest_profile.get('team', 'Unknown')) if latest_profile is not None else 'Unknown'
         portrait = latest_profile.get('roster_headshot') if latest_profile is not None else None
@@ -800,7 +825,7 @@ if nav_page == '👤 Player Research':
         with left:
             if isinstance(portrait, str) and portrait.startswith('https://'):
                 try:
-                    st.image(portrait, width=116)
+                    st.image(portrait, width=74)
                 except Exception:
                     st.caption('No portrait available')
             else:
@@ -808,13 +833,24 @@ if nav_page == '👤 Player Research':
         with right:
             st.markdown(f'<div class="profile-eyebrow">PLAYER PROFILE</div><div style="font-size:30px;font-weight:800;letter-spacing:-1.2px;color:#f3f8ff">{player}</div>', unsafe_allow_html=True)
             st.caption(' · '.join(x for x in (position if position not in ('nan','None') else '', team_name) if x))
-            st.caption('NFL roster headshot when available · No guessed player photos')
-        available = [m for m in MARKETS if m in logs and logs.loc[logs.player.astype(str).eq(player), m].notna().any()]
+            
+        # A zero-valued passing_yards column exists for WRs in the raw feed; it is not a valid WR market.
+        POSITION_MARKETS = {
+            'QB': {'passing_yards','passing_tds','pass_attempts','completions','interceptions','rushing_yards','carries','rushing_tds','rush_rec_yards','rush_rec_tds'},
+            'RB': {'rushing_yards','carries','rushing_tds','receiving_yards','receptions','targets','receiving_tds','rush_rec_yards','rush_rec_tds'},
+            'FB': {'rushing_yards','carries','rushing_tds','receiving_yards','receptions','targets','receiving_tds','rush_rec_yards','rush_rec_tds'},
+            'WR': {'receiving_yards','receptions','targets','receiving_tds','rushing_yards','carries','rushing_tds','rush_rec_yards','rush_rec_tds'},
+            'TE': {'receiving_yards','receptions','targets','receiving_tds'},
+            'K': {'field_goals','extra_points'}, 'PK': {'field_goals','extra_points'},
+        }
+        position = position.upper().strip()
+        valid_markets = POSITION_MARKETS.get(position, set(MARKETS))
+        available = [m for m in MARKETS if m in valid_markets and m in logs and logs.loc[logs.player.astype(str).eq(player), m].notna().any()]
         if not available:
             st.warning('No supported market columns found for this player.')
         else:
             market_col, window_col = st.columns([2.4, 1])
-            market = market_col.selectbox('Stat market', available, format_func=lambda x: MARKETS[x])
+            market = market_col.selectbox('Stat market', available, format_func=lambda x: MARKETS[x], key=f'market_{normalized_player(player)}')
             full = logs[logs.player.astype(str).eq(player)].dropna(subset=[market]).copy()
             full = full.sort_values(['season','week','game_date'] if {'season','week'}.issubset(full.columns) else ['game_date'])
             if 'season' in full and full['season'].notna().any():
@@ -1161,7 +1197,8 @@ if nav_page == '👤 Player Research':
                     delta = float(recent.mean() - baseline.mean()) if len(baseline) >= 3 else float('nan')
                     st.write(f'Last 5 average: **{recent.mean():.1f}** | Previous games average: **{baseline.mean():.1f}**' if len(baseline) >= 3 else f'Last 5 average: **{recent.mean():.1f}** | Not enough earlier games for comparison')
                     momentum_color = '#4ade80' if delta > 0 else '#f87171' if delta < 0 else '#cbd5e1'
-                    st.markdown(f"Difference vs previous games: <span style='color:{momentum_color};font-weight:700'>{delta:+.1f}</span>", unsafe_allow_html=True) if np.isfinite(delta) else None
+                    if np.isfinite(delta):
+                        st.markdown(f"Difference vs previous games: <span style='color:{momentum_color};font-weight:700'>{delta:+.1f}</span>", unsafe_allow_html=True)
                     st.caption('Recent performance can reflect opportunity, matchups, or random variation. This is not an independently validated prediction adjustment.')
 if nav_page == '📈 Trends':
     st.header('Momentum Tracker')

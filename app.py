@@ -111,18 +111,43 @@ def fetch_underdog_board(api_key):
     meta = payload.get("meta") or {}
     if meta.get("is_demo") or str(meta.get("mode", "")).lower() == "demo":
         raise RuntimeError("Provider returned demonstration data, not real Underdog lines.")
+    raw_data = payload.get("data", [])
+    diagnostics = {
+        "payload_keys": sorted(payload.keys()),
+        "data_type": type(raw_data).__name__,
+        "raw_count": len(raw_data) if isinstance(raw_data, (list, dict)) else 0,
+        "first_item_keys": [],
+        "nested_keys": {},
+        "rejected": {"demo_or_status": 0, "no_available_selection": 0, "missing_player_market_or_line": 0},
+    }
+    if isinstance(raw_data, dict):
+        diagnostics["data_keys"] = sorted(raw_data.keys())
+        raw_data = next((raw_data[k] for k in ("items", "results", "projections", "offers") if isinstance(raw_data.get(k), list)), [])
+    if not isinstance(raw_data, list):
+        raw_data = []
+    if raw_data and isinstance(raw_data[0], dict):
+        first_item = raw_data[0]
+        diagnostics["first_item_keys"] = sorted(first_item.keys())
+        diagnostics["nested_keys"] = {k: sorted(v.keys()) for k, v in first_item.items() if isinstance(v, dict)}
+        diagnostics["selection_example_keys"] = sorted(first_item["selections"][0].keys()) if isinstance(first_item.get("selections"), list) and first_item["selections"] and isinstance(first_item["selections"][0], dict) else []
+    diagnostics["parsed_count"] = len(raw_data)
     rows = []
-    for item in payload.get("data", []):
+    for item in raw_data:
+        if not isinstance(item, dict):
+            continue
         player = item.get("player") or {}
         market = item.get("market") or {}
         event = item.get("event") or {}
         if item.get("is_demo") or item.get("status") not in (None, "active"):
+            diagnostics["rejected"]["demo_or_status"] += 1
             continue
         sides = {str(x.get("side", "")).lower(): x for x in (item.get("selections") or [])}
         if not any(x.get("available") is True for x in sides.values()):
+            diagnostics["rejected"]["no_available_selection"] += 1
             continue
         raw_line = item.get("line")
         if raw_line is None or not player.get("name") or not market.get("stat"):
+            diagnostics["rejected"]["missing_player_market_or_line"] += 1
             continue
         rows.append({
             "player": player["name"], "team": player.get("team") or "",
@@ -138,7 +163,8 @@ def fetch_underdog_board(api_key):
             "provider_id": item.get("id") or "",
         })
     columns = ["player", "team", "market", "period", "line", "updated_at", "pick_type", "higher_available", "lower_available", "higher_multiplier", "lower_multiplier", "opponent", "starts_at", "provider_id"]
-    return pd.DataFrame(rows, columns=columns), meta, response.headers.get("X-Credits-Cost", "Unknown")
+    diagnostics["accepted_count"] = len(rows)
+    return pd.DataFrame(rows, columns=columns), meta, response.headers.get("X-Credits-Cost", "Unknown"), diagnostics
 
 with st.sidebar:
     st.header('Data inputs')
@@ -177,7 +203,7 @@ if board_mode == 'Automatic API':
         st.sidebar.error("UNDERDOG_API_KEY is missing from Streamlit Secrets.")
     else:
         try:
-            lines, board_meta, credit_cost = fetch_underdog_board(api_key)
+            lines, board_meta, credit_cost, board_diagnostics = fetch_underdog_board(api_key)
             if not lines.empty:
                 st.sidebar.success(f"Retrieved {len(lines)} observed NFL offers (cached for 24 hours).")
             st.sidebar.caption(f"Source observation: {board_meta.get('observed_at', 'Unknown')} | Request credit cost: {credit_cost}")
@@ -186,7 +212,10 @@ if board_mode == 'Automatic API':
             if board_meta.get("source_status") not in ("fresh", "live", "ok", None):
                 st.sidebar.warning(f"Provider source status: {board_meta.get('source_status')}")
             if lines.empty:
-                st.sidebar.warning("The provider returned zero qualifying NFL offers. The app will remain usable, but Best Bets cannot rank lines until valid offers are available. This may reflect the response format, available offers, or filtering rules.")
+                st.sidebar.warning("No qualifying NFL offers were recognized. Expand API diagnostics below to identify the mismatch.")
+                with st.sidebar.expander("API diagnostics — safe to share", expanded=True):
+                    st.json(board_diagnostics)
+                    st.caption("Only response field names and counts are shown. No API key, player data, or complete response is displayed.")
         except Exception as exc:
             st.sidebar.error(f"Underdog API unavailable: {exc}")
 else:

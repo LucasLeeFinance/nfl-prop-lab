@@ -135,31 +135,57 @@ def fetch_underdog_board(api_key):
     for item in raw_data:
         if not isinstance(item, dict):
             continue
-        player = item.get("player") or {}
-        market = item.get("market") or {}
-        event = item.get("event") or {}
-        if item.get("is_demo") or item.get("status") not in (None, "active"):
+        # The compact endpoint exposes player/stat and side availability at the
+        # top level. Older code incorrectly expected nested selections objects.
+        if item.get("is_demo") is True or str(item.get("status", "")).lower() in {"inactive", "closed", "suspended", "cancelled", "canceled", "settled"}:
             diagnostics["rejected"]["demo_or_status"] += 1
             continue
-        sides = {str(x.get("side", "")).lower(): x for x in (item.get("selections") or [])}
-        if not any(x.get("available") is True for x in sides.values()):
+        if str(item.get("league", "NFL")).upper() != "NFL" and str(item.get("sport", "")).lower() not in {"football", "american_football", "nfl"}:
+            diagnostics["rejected"]["demo_or_status"] += 1
+            continue
+        raw_sides = item.get("sides")
+        sides = {}
+        if isinstance(raw_sides, dict):
+            sides = {str(k).lower(): v for k, v in raw_sides.items()}
+        elif isinstance(raw_sides, list):
+            sides = {str(v.get("side", v.get("name", ""))).lower(): v for v in raw_sides if isinstance(v, dict)}
+        def available(direction):
+            top = item.get(direction + "_available")
+            if top is not None:
+                return top is True or str(top).lower() in ("true", "1", "yes")
+            val = sides.get(direction)
+            if isinstance(val, dict):
+                return val.get("available") is True
+            return val is True
+        higher_ok = available("higher")
+        lower_ok = available("lower")
+        if not higher_ok and not lower_ok:
             diagnostics["rejected"]["no_available_selection"] += 1
             continue
+        player_raw = item.get("player")
+        player_name = player_raw.get("name", player_raw.get("display_name")) if isinstance(player_raw, dict) else player_raw
+        market_raw = item.get("stat") or item.get("market")
+        stat_name = market_raw.get("stat", market_raw.get("name")) if isinstance(market_raw, dict) else market_raw
         raw_line = item.get("line")
-        if raw_line is None or not player.get("name") or not market.get("stat"):
+        if raw_line is None or not player_name or not stat_name:
             diagnostics["rejected"]["missing_player_market_or_line"] += 1
             continue
+        def multiplier(direction):
+            direct = item.get(direction + "_mult")
+            if direct is not None:
+                return direct
+            side = sides.get(direction)
+            return side.get("payout_multiplier", side.get("multiplier")) if isinstance(side, dict) else None
         rows.append({
-            "player": player["name"], "team": player.get("team") or "",
-            "market": str(market["stat"]).strip().lower().replace(" ", "_"),
-            "period": market.get("period") or "Unknown", "line": raw_line,
+            "player": str(player_name), "team": item.get("team") or (player_raw.get("team") if isinstance(player_raw, dict) else "") or "",
+            "market": str(stat_name).strip().lower().replace(" ", "_"),
+            "period": item.get("period") or "Unknown", "line": raw_line,
             "updated_at": item.get("observed_at") or meta.get("observed_at") or "Unknown",
-            "pick_type": "discounted" if item.get("is_discounted") else (item.get("line_type") or "standard"),
-            "higher_available": sides.get("higher", {}).get("available") is True,
-            "lower_available": sides.get("lower", {}).get("available") is True,
-            "higher_multiplier": sides.get("higher", {}).get("payout_multiplier"),
-            "lower_multiplier": sides.get("lower", {}).get("payout_multiplier"),
-            "opponent": event.get("opponent") or "", "starts_at": event.get("starts_at") or "",
+            "pick_type": item.get("line_type") or ("special" if item.get("higher_only") or item.get("multiplier_scale") not in (None, 1, 1.0) else "standard"),
+            "higher_available": higher_ok, "lower_available": lower_ok,
+            "higher_multiplier": multiplier("higher"),
+            "lower_multiplier": multiplier("lower"),
+            "opponent": item.get("opponent") or "", "starts_at": item.get("starts_at") or "",
             "provider_id": item.get("id") or "",
         })
     columns = ["player", "team", "market", "period", "line", "updated_at", "pick_type", "higher_available", "lower_available", "higher_multiplier", "lower_multiplier", "opponent", "starts_at", "provider_id"]

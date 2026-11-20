@@ -137,7 +137,8 @@ def fetch_underdog_board(api_key):
             "opponent": event.get("opponent") or "", "starts_at": event.get("starts_at") or "",
             "provider_id": item.get("id") or "",
         })
-    return pd.DataFrame(rows), meta, response.headers.get("X-Credits-Cost", "Unknown")
+    columns = ["player", "team", "market", "period", "line", "updated_at", "pick_type", "higher_available", "lower_available", "higher_multiplier", "lower_multiplier", "opponent", "starts_at", "provider_id"]
+    return pd.DataFrame(rows, columns=columns), meta, response.headers.get("X-Credits-Cost", "Unknown")
 
 with st.sidebar:
     st.header('Data inputs')
@@ -177,14 +178,15 @@ if board_mode == 'Automatic API':
     else:
         try:
             lines, board_meta, credit_cost = fetch_underdog_board(api_key)
-            st.sidebar.success(f"Retrieved {len(lines)} observed NFL offers (cached for 24 hours).")
+            if not lines.empty:
+                st.sidebar.success(f"Retrieved {len(lines)} observed NFL offers (cached for 24 hours).")
             st.sidebar.caption(f"Source observation: {board_meta.get('observed_at', 'Unknown')} | Request credit cost: {credit_cost}")
             if board_meta.get("next_cursor"):
                 st.sidebar.warning("Partial board: additional pages exist. Not fetched automatically to protect free credits.")
             if board_meta.get("source_status") not in ("fresh", "live", "ok", None):
                 st.sidebar.warning(f"Provider source status: {board_meta.get('source_status')}")
             if lines.empty:
-                st.sidebar.warning("No real, available NFL lines were returned in this page.")
+                st.sidebar.warning("The provider returned zero qualifying NFL offers. The app will remain usable, but Best Bets cannot rank lines until valid offers are available. This may reflect the response format, available offers, or filtering rules.")
         except Exception as exc:
             st.sidebar.error(f"Underdog API unavailable: {exc}")
 else:
@@ -194,6 +196,9 @@ if logs is not None:
     logs = logs.dropna(subset=['game_date','player']).sort_values('game_date')
     for c in MARKETS:
         if c in logs: logs[c] = pd.to_numeric(logs[c], errors='coerce')
+if lines is not None and not set(REQUIRED_LINES).issubset(lines.columns):
+    st.sidebar.warning('The line source did not return the required player, market, and line fields. No lines will be analyzed.')
+    lines = None
 if lines is not None:
     lines['line'] = pd.to_numeric(lines['line'], errors='coerce')
     lines['market'] = lines['market'].astype(str).str.strip().str.lower()
@@ -270,7 +275,7 @@ def analyze(log_bytes, line_bytes, weight, adjustment):
     return pd.DataFrame(rows)
 
 results=pd.DataFrame()
-if logs is not None and slate_lines is not None:
+if logs is not None and slate_lines is not None and not slate_lines.empty:
     results=analyze(logs.to_csv(index=False).encode(),slate_lines.to_csv(index=False).encode(),momentum_weight,context_shift)
 
 tabs=st.tabs(['🏆 Best Bets','🏟️ Weekly Games','🔎 Player Research','📈 Momentum','🛡️ Defensive Matchups','🧪 Model Evaluation','📁 Data Guide'])

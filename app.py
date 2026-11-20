@@ -11,6 +11,50 @@ st.title('🏈 NFL Prop Lab')
 st.caption('Underdog Higher / Lower research • historical performance • momentum • matchup context')
 
 MARKETS = {'passing_yards':'Passing yards','passing_tds':'Passing TDs','pass_attempts':'Pass attempts','completions':'Pass completions','interceptions':'Interceptions','rushing_yards':'Rushing yards','carries':'Rushing attempts','rushing_tds':'Rushing TDs','receiving_yards':'Receiving yards','receptions':'Receptions','targets':'Targets','receiving_tds':'Receiving TDs','rush_rec_yards':'Rush + receiving yards','rush_rec_tds':'Rush + receiving TDs','longest_reception':'Longest reception','longest_rush':'Longest rush','sacks':'Sacks','tackles':'Tackles','field_goals':'Field goals','extra_points':'Extra points'}
+@st.cache_data(ttl=21600, show_spinner="Loading NFL weekly statistics...")
+def fetch_nfl_stats(seasons):
+    import nflreadpy as nfl
+    frames = nfl.load_player_stats(seasons=list(seasons), summary_level="week")
+    frame = frames.to_pandas() if hasattr(frames, "to_pandas") else pd.DataFrame(frames)
+    if frame.empty:
+        raise ValueError("NFL source returned no weekly player statistics")
+    def first(names):
+        return next((n for n in names if n in frame.columns), None)
+    player_col = first(["player_display_name", "player_name", "player", "player_id"])
+    week_col = first(["week"])
+    date_col = first(["game_date", "gameday", "date"])
+    opponent_col = first(["opponent_team", "opponent", "recent_team"])
+    if player_col is None:
+        raise ValueError("NFL data did not include a recognizable player field")
+    out = pd.DataFrame({"player": frame[player_col].astype(str)})
+    if date_col:
+        out["game_date"] = pd.to_datetime(frame[date_col], errors="coerce")
+    elif "season" in frame and week_col:
+        # Date is used for chronological ordering; season/week preserves that order.
+        out["game_date"] = pd.to_datetime(frame["season"].astype(str) + "-01-01", errors="coerce") + pd.to_timedelta(pd.to_numeric(frame[week_col], errors="coerce").fillna(0) * 7, unit="D")
+    else:
+        raise ValueError("NFL data did not include season/week or game date")
+    out["opponent"] = frame[opponent_col].astype(str) if opponent_col else "Unknown"
+    mapping = {
+        "passing_yards":["passing_yards"], "passing_tds":["passing_tds"],
+        "pass_attempts":["attempts", "passing_attempts"],
+        "completions":["completions", "passing_completions"],
+        "interceptions":["interceptions", "passing_interceptions"],
+        "rushing_yards":["rushing_yards"], "carries":["carries", "rushing_attempts"],
+        "rushing_tds":["rushing_tds"], "receiving_yards":["receiving_yards"],
+        "receptions":["receptions"], "targets":["targets"],
+        "receiving_tds":["receiving_tds"]
+    }
+    for dest, candidates in mapping.items():
+        source = first(candidates)
+        if source:
+            out[dest] = pd.to_numeric(frame[source], errors="coerce")
+    if {"rushing_yards", "receiving_yards"}.issubset(out.columns):
+        out["rush_rec_yards"] = out["rushing_yards"].fillna(0) + out["receiving_yards"].fillna(0)
+    if {"rushing_tds", "receiving_tds"}.issubset(out.columns):
+        out["rush_rec_tds"] = out["rushing_tds"].fillna(0) + out["receiving_tds"].fillna(0)
+    return out.dropna(subset=["player", "game_date"]).sort_values("game_date")
+
 REQUIRED_LOG = ['player','game_date','opponent']
 REQUIRED_LINES = ['player','market','line']
 
@@ -27,7 +71,13 @@ def read_csv(upload, required):
 with st.sidebar:
     st.header('Data inputs')
     st.caption('Upload historical NFL game logs and a current Underdog board. No live feed is connected.')
-    log_upload = st.file_uploader('Player game logs (CSV)', type='csv', key='logs')
+    source_mode = st.radio('Historical player data', ['Automatic NFL statistics', 'Upload my own CSV'], index=0)
+    if source_mode == 'Automatic NFL statistics':
+        selected_seasons = st.multiselect('NFL seasons', [2026, 2025, 2024, 2023], default=[2025, 2026])
+        st.caption('Source: nflverse via nflreadpy. Weekly statistics may update after games; some markets require other sources.')
+        log_upload = None
+    else:
+        log_upload = st.file_uploader('Player game logs (CSV)', type='csv', key='logs')
     lines_upload = st.file_uploader('Underdog projections (CSV)', type='csv', key='lines')
     st.markdown('**Optional qualitative matchup inputs**')
     st.caption('Adjustments are research scenarios, not validated prediction improvements.')
@@ -35,7 +85,17 @@ with st.sidebar:
     context_shift = st.slider('Manual matchup adjustment (%)', -20, 20, 0, 1)
     st.caption('Positive adjustment raises the estimated stat mean; negative lowers it.')
 
-logs = read_csv(log_upload, REQUIRED_LOG)
+logs = None
+if source_mode == 'Automatic NFL statistics':
+    if selected_seasons:
+        try:
+            logs = fetch_nfl_stats(tuple(sorted(selected_seasons)))
+            st.sidebar.success(f'Loaded {len(logs):,} weekly player records')
+        except Exception as exc:
+            st.sidebar.error(f'Automatic data unavailable: {exc}')
+            st.sidebar.info('You can switch to CSV upload while we resolve the data source.')
+else:
+    logs = read_csv(log_upload, REQUIRED_LOG)
 lines = read_csv(lines_upload, REQUIRED_LINES)
 if logs is not None:
     logs['game_date'] = pd.to_datetime(logs['game_date'], errors='coerce')
@@ -82,7 +142,7 @@ with tabs[0]:
     st.header('Best Bets — research ranking')
     st.info('This is a statistical research ranking, not a verified list of profitable picks. Probabilities are uncalibrated normal-model estimates; Underdog payout multipliers and pick correlations are not included.')
     if results.empty:
-        st.warning('Upload both CSV files in the sidebar to generate rankings. The app does not invent current Underdog lines.')
+        st.warning('Load NFL statistics and upload a current Underdog projections CSV to generate rankings. No live Underdog feed is connected.')
     else:
         a,b,c=st.columns(3)
         min_games=a.slider('Minimum games',5,17,8)
@@ -101,7 +161,7 @@ with tabs[0]:
             st.download_button('Export research rankings',view.to_csv(index=False),'nfl_prop_rankings.csv','text/csv')
 with tabs[1]:
     st.header('Player Research')
-    if logs is None: st.info('Upload a player game-log CSV to start.')
+    if logs is None: st.info('Load automatic NFL statistics or upload a player game-log CSV to start.')
     else:
         player=st.selectbox('Player',sorted(logs['player'].astype(str).unique()),key='research_player')
         available=[m for m in MARKETS if m in logs and logs.loc[logs.player.astype(str)==player,m].notna().any()]
@@ -120,7 +180,7 @@ with tabs[1]:
 with tabs[2]:
     st.header('Momentum Tracker')
     st.write('Momentum is measured as the last-five-game average minus the available historical average. It is descriptive, not proof that a trend will continue.')
-    if results.empty: st.info('Upload both datasets to compare recent form with the baseline.')
+    if results.empty: st.info('Load NFL statistics and upload an Underdog board CSV to compare recent form with the baseline.')
     else:
         momentum=results[['player','market_name','season_mean','recent_mean','momentum_delta','sample_games']].sort_values('momentum_delta',ascending=False)
         st.dataframe(momentum,hide_index=True,use_container_width=True)
